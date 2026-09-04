@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ws://127.0.0.1:* http://127.0.0.1:*;">
+  <title>Batto Multi-Chat</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="background" aria-hidden="true"></div>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <strong>BATTO MULTI-CHAT</strong>
+        <span>Twitch · TikTok · CNG · YouTube</span>
+      </div>
+      <div class="top-actions">
+        <span id="serverStatus" class="status-pill">HTTP …</span>
+        <button id="detachBtn" class="icon-button" title="Chat entkoppeln" aria-label="Chat entkoppeln">↗</button>
+        <button id="settingsBtn" class="icon-button" title="Einstellungen" aria-label="Einstellungen">⚙</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="chat-panel glass">
+        <nav class="platform-tabs" id="platformTabs" aria-label="Plattformfilter"></nav>
+        <div id="chatList" class="chat-list" aria-live="polite">
+          <div id="emptyState" class="empty-state">
+            <strong>Noch keine Nachrichten</strong>
+            <span>AxelChat verbinden oder eine Testnachricht senden.</span>
+          </div>
+        </div>
+
+        <form id="composer" class="composer">
+          <select id="sendPlatform" aria-label="Zielplattform">
+            <option value="local">Lokal / Test</option>
+            <option value="twitch">Twitch</option>
+            <option value="tiktok">TikTok</option>
+            <option value="cng">CNG</option>
+            <option value="youtube">YouTube</option>
+          </select>
+          <input id="messageInput" maxlength="500" autocomplete="off" placeholder="Nachricht schreiben …" />
+          <button class="primary" type="submit">Senden</button>
+        </form>
+        <div id="composerHint" class="composer-hint">Plattform-Senden wird nur freigeschaltet, wenn der jeweilige Adapter es wirklich unterstützt.</div>
+      </section>
+
+      <aside class="side-panel glass">
+        <div class="section-title"><strong>Verbindungen</strong><button id="testMessageBtn">Test</button></div>
+        <div class="connection-row">
+          <div><span class="dot" id="axelDot"></span><strong>AxelChat Bridge</strong><small id="axelStatusText">Nicht verbunden</small></div>
+          <button id="axelConnectBtn">Verbinden</button>
+        </div>
+        <div class="capability-grid">
+          <div><span>Twitch</span><small>Offizieller Adapter vorgesehen</small></div>
+          <div><span>TikTok</span><small>AxelChat/TikFinity/Euler optional</small></div>
+          <div><span>CNG</span><small>Lokaler Status bis API verfügbar</small></div>
+          <div><span>YouTube</span><small>Offizieller Adapter vorgesehen</small></div>
+        </div>
+
+        <div class="section-title"><strong>Moderation</strong><span>lokal / Plattform getrennt</span></div>
+        <div id="moderationSummary" class="summary-list"></div>
+
+        <div class="section-title"><strong>OBS Browserquelle</strong></div>
+        <div class="url-box">
+          <code id="overlayUrl">http://127.0.0.1:8787/overlay/chat</code>
+          <button id="openOverlayBtn">Öffnen</button>
+        </div>
+
+        <div class="section-title"><strong>Letzte Aktivität</strong></div>
+        <div id="miniLog" class="mini-log"></div>
+      </aside>
+    </main>
+  </div>
+
+  <div id="contextMenu" class="context-menu" hidden>
+    <button data-action="addModerator">Als Moderator hinzufügen</button>
+    <button data-action="removeModerator">Als Moderator entfernen</button>
+    <div></div>
+    <button data-action="mute">Stummschalten</button>
+    <button data-action="unmute">Entstummen</button>
+    <button data-action="block" class="danger">Blockieren</button>
+    <button data-action="unblock">Entblocken</button>
+  </div>
+
+  <div id="settings" class="drawer-backdrop" hidden>
+    <section class="settings-drawer glass">
+      <header>
+        <div><strong>EINSTELLUNGEN</strong><span>Jedes Modul besitzt eine eigene Config-Seite.</span></div>
+        <button id="closeSettingsBtn" class="icon-button">✕</button>
+      </header>
+      <div class="settings-body">
+        <nav id="settingsNav" class="settings-nav"></nav>
+        <div id="settingsPage" class="settings-page"></div>
+      </div>
+      <footer>
+        <button id="importBtn">Config importieren</button>
+        <button id="exportBtn">Config exportieren</button>
+        <span class="spacer"></span>
+        <button id="resetPageBtn">Zurücksetzen</button>
+        <button id="saveSettingsBtn" class="primary">Speichern</button>
+      </footer>
+    </section>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

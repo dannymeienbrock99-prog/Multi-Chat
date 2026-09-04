@@ -1,0 +1,50 @@
+{
+  "name": "batto-multi-chat",
+  "version": "0.1.0",
+  "description": "Batto Multi-Chat desktop app for Twitch, TikTok bridges, CNG and YouTube",
+  "main": "electron/main.cjs",
+  "author": "Crazy_Batto",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "smoke": "node scripts/smoke.cjs",
+    "check": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check src/core/chat-core.cjs && node --check src/core/config-store.cjs && node --check src/core/overlay-server.cjs && node --check src/adapters/axelchat.cjs && node --check src/adapters/mock.cjs && node --check src/renderer/app.js",
+    "pack:win": "electron-builder --win nsis"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "de.crazybatto.multichat",
+    "productName": "Batto Multi-Chat",
+    "artifactName": "Batto-Multi-Chat-Setup-${version}.${ext}",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "src/assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Batto Multi-Chat"
+    }
+  }
+}
