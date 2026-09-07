@@ -1,9 +1,5 @@
 const WebSocket = require("ws");
 
-function normalizeToken(value = "") {
-  return String(value).trim().replace(/^oauth:/i, "");
-}
-
 function normalizeChannel(value = "") {
   const raw = String(value).trim();
   if (!raw) return "";
@@ -44,7 +40,6 @@ function parseTags(raw = "") {
 
 class TwitchAdapter {
   constructor({ account = "", channel = "", onMessage, onStatus }) {
-    this.account = String(account || "").toLowerCase();
     this.channel = normalizeChannel(channel || account);
     this.onMessage = onMessage;
     this.onStatus = onStatus;
@@ -90,28 +85,6 @@ class TwitchAdapter {
   updateConfig(config = {}) {
     if (config.channel !== undefined) this.channel = normalizeChannel(config.channel);
     this.setStatus({ state: this.channel ? this.status.state : "not-configured" });
-  }
-
-  // Nur zur Abwärtskompatibilität mit älteren IPC-Aufrufen vorhanden.
-  // Die normale Twitch-Verbindung dieses Builds benötigt und benutzt keinen Token.
-  async validateToken(tokenValue) {
-    const token = normalizeToken(tokenValue);
-    if (!token) throw new Error("Dieser Twitch-Modus benötigt keinen OAuth- oder Access-Token.");
-
-    const response = await fetch("https://id.twitch.tv/oauth2/validate", {
-      method: "GET",
-      headers: { Authorization: `OAuth ${token}` }
-    });
-    if (!response.ok) throw new Error("Twitch-Token ist ungültig, abgelaufen oder wurde widerrufen.");
-    const data = await response.json();
-    return {
-      token,
-      login: String(data.login || "").toLowerCase(),
-      userId: String(data.user_id || ""),
-      clientId: String(data.client_id || ""),
-      scopes: Array.isArray(data.scopes) ? data.scopes.map(String) : [],
-      expiresIn: Number(data.expires_in || 0)
-    };
   }
 
   async connect() {
@@ -239,4 +212,4 @@ class TwitchAdapter {
   }
 }
 
-module.exports = { TwitchAdapter, normalizeToken, normalizeChannel, parseTags };
+module.exports = { TwitchAdapter, normalizeChannel, parseTags };
