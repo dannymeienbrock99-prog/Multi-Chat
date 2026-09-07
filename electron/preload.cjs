@@ -11,6 +11,13 @@ contextBridge.exposeInMainWorld("batto", {
   saveConfig: (patch) => ipcRenderer.invoke("config:save", patch),
   connectAdapter: (name) => ipcRenderer.invoke("adapter:connect", name),
   disconnectAdapter: (name) => ipcRenderer.invoke("adapter:disconnect", name),
+
+  twitchSaveConnect: (payload) => ipcRenderer.invoke("twitch:saveConnect", payload),
+  twitchCheck: (payload) => ipcRenderer.invoke("twitch:check", payload),
+  twitchDisconnect: () => ipcRenderer.invoke("twitch:disconnect"),
+  twitchClear: () => ipcRenderer.invoke("twitch:clear"),
+  twitchOpenDashboard: (channel) => ipcRenderer.invoke("twitch:openDashboard", channel),
+
   testMessage: (payload) => ipcRenderer.invoke("chat:test", payload),
   sendMessage: (payload) => ipcRenderer.invoke("chat:send", payload),
   moderate: (payload) => ipcRenderer.invoke("moderation:act", payload),
