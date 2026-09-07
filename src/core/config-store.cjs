@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 
 const DEFAULT_CONFIG = {
-  version: 1,
+  version: 2,
   general: {
     displayName: "Crazy_Batto",
     language: "de",
@@ -53,7 +53,13 @@ const DEFAULT_CONFIG = {
       url: "ws://127.0.0.1:8356",
       reconnectSeconds: 5
     },
-    twitch: { enabled: true, status: "not-configured" },
+    twitch: {
+      enabled: true,
+      status: "not-configured",
+      account: "",
+      channel: "crazy_batto",
+      autoConnect: false
+    },
     youtube: { enabled: true, status: "not-configured" },
     tiktok: { enabled: true, status: "bridge-required" },
     cng: { enabled: true, status: "local-only" }
