@@ -2,15 +2,15 @@
   const baseRenderSettings = renderSettings;
 
   function currentTwitchConfig() {
-    return S.config?.platforms?.twitch || { account: "", channel: "", autoConnect: false };
+    return S.config?.platforms?.twitch || { channel: "", autoConnect: false };
   }
 
   function statusText() {
     const s = S.adapters?.twitch || {};
-    if (s.connected) return `Verbunden als ${esc(s.account || "Twitch")}${s.channel ? ` · #${esc(s.channel)}` : ""}`;
+    if (s.connected) return `Verbunden · #${esc(s.channel || "twitch")} · Nur Lesen`;
     if (s.error) return `Fehler: ${esc(s.error)}`;
     if (s.state === "connecting") return "Verbindung wird hergestellt …";
-    if (s.state === "configured") return "Konfiguriert";
+    if (s.state === "configured") return "Kanal konfiguriert";
     if (s.state === "stopped") return "Getrennt";
     return "Noch nicht mit Twitch verbunden.";
   }
@@ -20,18 +20,15 @@
     return `
       <div class="config-card" id="twitchDirectCard">
         <h3>Twitch</h3>
-        <p>Direkte Twitch-IRC-Verbindung. Eine Client-ID muss im Tool nicht eingetragen werden, wenn bereits ein gültiger Twitch User Access Token vorhanden ist.</p>
+        <p>Twitch-Chat direkt lesen – ohne Client ID, ohne OAuth-Feld und ohne Access-Token-Eingabe.</p>
         <div class="field-grid">
-          ${field("Account", "twAccount", c.account || "")}
           ${field("Channel / Twitch-URL", "twChannel", c.channel || "crazy_batto")}
-          ${field("OAuth / Access Token", "twToken", "", "password")}
         </div>
         ${check("Automatisch verbinden", "twAuto", Boolean(c.autoConnect))}
-        <div class="composer-hint">Das Channel-Feld akzeptiert auch deine Dashboard-Adresse, z. B. dashboard.twitch.tv/popout/u/crazy_batto/stream-manager/chat. Der Kanalname wird automatisch herausgelesen. Der Token wird verschlüsselt über Windows Secure Storage gespeichert und nie wieder im Klartext angezeigt.</div>
-        <div class="section-title"><strong>Twitch-Anmeldung</strong><span id="twAuthState">${statusText()}</span></div>
+        <div class="composer-hint">Du kannst den Kanalnamen, eine normale Twitch-URL oder deine Dashboard-Chat-Adresse einfügen. Beispiel: dashboard.twitch.tv/popout/u/crazy_batto/stream-manager/chat. Dieser Modus ist absichtlich Nur-Lesen; Senden und Plattform-Moderation werden nicht als funktionierend vorgetäuscht.</div>
+        <div class="section-title"><strong>Twitch-Chat</strong><span id="twAuthState">${statusText()}</span></div>
         <div class="top-actions" style="justify-content:flex-start;flex-wrap:wrap">
-          <button id="twSaveConnect" class="primary">Token speichern & verbinden</button>
-          <button id="twCheck">Token prüfen</button>
+          <button id="twSaveConnect" class="primary">Speichern & verbinden</button>
           <button id="twDisconnect">Trennen</button>
           <button id="twClear" class="danger">Twitch-Daten löschen</button>
           <button id="twDashboard">Dashboard-Chat öffnen</button>
@@ -46,30 +43,34 @@
     save.onclick = async () => {
       save.disabled = true;
       try {
-        const r = await api.twitchSaveConnect({
-          token: $("#twToken")?.value || "",
-          channel: $("#twChannel")?.value || "",
-          autoConnect: Boolean($("#twAuto")?.checked)
+        const current = currentTwitchConfig();
+        const channel = $("#twChannel")?.value || "";
+        const autoConnect = Boolean($("#twAuto")?.checked);
+        const next = await api.saveConfig({
+          platforms: {
+            ...S.config.platforms,
+            twitch: {
+              ...current,
+              enabled: true,
+              channel,
+              autoConnect,
+              status: channel ? "configured" : "not-configured"
+            }
+          }
         });
+        S.config = next;
+        const r = await api.connectAdapter("twitch");
         if (!r.ok) return toast(r.error || "Twitch-Verbindung fehlgeschlagen.", true);
-        $("#twToken").value = "";
         await refresh();
         renderSettings();
-        toast(`Twitch verbunden: ${r.login} · #${r.channel}`);
+        toast(`Twitch-Chat verbunden: #${r.status?.channel || channel}`);
       } finally {
         save.disabled = false;
       }
     };
 
-    $("#twCheck").onclick = async () => {
-      const r = await api.twitchCheck({ token: $("#twToken")?.value || "" });
-      if (!r.ok) return toast(r.error || "Twitch-Token ungültig.", true);
-      const mins = r.expiresIn > 0 ? Math.floor(r.expiresIn / 60) : 0;
-      toast(`Token gültig: ${r.login} · Scopes: ${(r.scopes || []).join(", ")}${mins ? ` · noch ca. ${mins} Min.` : ""}`);
-    };
-
     $("#twDisconnect").onclick = async () => {
-      const r = await api.twitchDisconnect();
+      const r = await api.disconnectAdapter("twitch");
       if (!r.ok) return toast(r.error || "Trennen fehlgeschlagen.", true);
       await refresh();
       renderSettings();
@@ -77,9 +78,21 @@
     };
 
     $("#twClear").onclick = async () => {
-      if (!confirm("Gespeicherten Twitch-Token und Twitch-Anmeldedaten wirklich löschen?")) return;
-      const r = await api.twitchClear();
-      if (!r.ok) return toast(r.error || "Twitch-Daten konnten nicht gelöscht werden.", true);
+      if (!confirm("Gespeicherten Twitch-Kanal wirklich löschen?")) return;
+      await api.disconnectAdapter("twitch");
+      const current = currentTwitchConfig();
+      S.config = await api.saveConfig({
+        platforms: {
+          ...S.config.platforms,
+          twitch: {
+            ...current,
+            channel: "",
+            account: "",
+            autoConnect: false,
+            status: "not-configured"
+          }
+        }
+      });
       await refresh();
       renderSettings();
       toast("Twitch-Daten gelöscht.");
@@ -104,7 +117,7 @@
       .find((row) => row.querySelector("strong")?.textContent?.trim() === "Twitch");
     if (legacyTwitch) {
       const small = legacyTwitch.querySelector("small");
-      if (small) small.textContent = "Direkter IRC-Adapter ist oben konfigurierbar";
+      if (small) small.textContent = "Direkter Chat-Lesemodus ist oben konfigurierbar";
     }
 
     bindTwitchUi();
