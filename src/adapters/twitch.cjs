@@ -43,93 +43,90 @@ function parseTags(raw = "") {
 }
 
 class TwitchAdapter {
-  constructor({ account = "", channel = "", onMessage, onStatus, getToken }) {
+  constructor({ account = "", channel = "", onMessage, onStatus }) {
     this.account = String(account || "").toLowerCase();
     this.channel = normalizeChannel(channel || account);
     this.onMessage = onMessage;
     this.onStatus = onStatus;
-    this.getToken = getToken;
     this.socket = null;
     this.connectPromise = null;
     this.manualStop = false;
-    this.scopes = [];
+    this.anonymousNick = "";
     this.status = {
       name: "twitch",
       connected: false,
-      state: "not-configured",
-      account: this.account,
+      state: this.channel ? "configured" : "not-configured",
+      account: "",
       channel: this.channel,
+      anonymous: true,
+      readOnly: true,
       error: null
     };
   }
 
-  getStatus() { return { ...this.status, scopes: [...this.scopes] }; }
+  getStatus() {
+    return {
+      ...this.status,
+      account: "",
+      channel: this.channel,
+      anonymous: true,
+      readOnly: true,
+      nick: this.anonymousNick || undefined
+    };
+  }
 
   setStatus(patch) {
     this.status = {
       ...this.status,
       ...patch,
-      account: this.account,
-      channel: this.channel
+      account: "",
+      channel: this.channel,
+      anonymous: true,
+      readOnly: true
     };
     this.onStatus?.(this.getStatus());
   }
 
   updateConfig(config = {}) {
-    if (config.account !== undefined) this.account = String(config.account || "").trim().toLowerCase();
-    if (config.channel !== undefined) this.channel = normalizeChannel(config.channel || this.account);
-    this.setStatus({});
+    if (config.channel !== undefined) this.channel = normalizeChannel(config.channel);
+    this.setStatus({ state: this.channel ? this.status.state : "not-configured" });
   }
 
+  // Nur zur Abwärtskompatibilität mit älteren IPC-Aufrufen vorhanden.
+  // Die normale Twitch-Verbindung dieses Builds benötigt und benutzt keinen Token.
   async validateToken(tokenValue) {
     const token = normalizeToken(tokenValue);
-    if (!token) throw new Error("Kein Twitch OAuth / Access Token gespeichert.");
+    if (!token) throw new Error("Dieser Twitch-Modus benötigt keinen OAuth- oder Access-Token.");
 
     const response = await fetch("https://id.twitch.tv/oauth2/validate", {
       method: "GET",
       headers: { Authorization: `OAuth ${token}` }
     });
-
-    if (!response.ok) {
-      throw new Error("Twitch-Token ist ungültig, abgelaufen oder wurde widerrufen.");
-    }
-
+    if (!response.ok) throw new Error("Twitch-Token ist ungültig, abgelaufen oder wurde widerrufen.");
     const data = await response.json();
-    const login = String(data.login || "").toLowerCase();
-    const scopes = Array.isArray(data.scopes) ? data.scopes.map(String) : [];
-    if (!login) throw new Error("Twitch konnte dem Token keinen Benutzer zuordnen.");
-    if (!scopes.includes("chat:read")) {
-      throw new Error("Dem Twitch-Token fehlt die Berechtigung chat:read.");
-    }
-
     return {
       token,
-      login,
+      login: String(data.login || "").toLowerCase(),
       userId: String(data.user_id || ""),
       clientId: String(data.client_id || ""),
-      scopes,
+      scopes: Array.isArray(data.scopes) ? data.scopes.map(String) : [],
       expiresIn: Number(data.expires_in || 0)
     };
   }
 
   async connect() {
+    if (!this.channel) throw new Error("Kein Twitch-Kanal eingetragen.");
     if (this.socket && [WebSocket.OPEN, WebSocket.CONNECTING].includes(this.socket.readyState)) {
       return this.connectPromise || { ok: true, status: this.getStatus() };
     }
 
-    const storedToken = await this.getToken?.();
-    const validation = await this.validateToken(storedToken);
-    this.account = validation.login;
-    this.scopes = validation.scopes;
-    if (!this.channel) this.channel = this.account;
-    if (!this.channel) throw new Error("Kein Twitch-Kanal eingetragen.");
-
     this.manualStop = false;
+    this.anonymousNick = `justinfan${Math.floor(10000 + Math.random() * 89999999)}`;
     this.setStatus({ state: "connecting", connected: false, error: null });
 
     this.connectPromise = new Promise((resolve, reject) => {
       let settled = false;
-      let authenticated = false;
+      let registered = false;
       const socket = new WebSocket("wss://irc-ws.chat.twitch.tv:443");
       this.socket = socket;
 
@@ -154,8 +151,8 @@ class TwitchAdapter {
 
       socket.on("open", () => {
         socket.send("CAP REQ :twitch.tv/membership twitch.tv/tags twitch.tv/commands");
-        socket.send(`PASS oauth:${validation.token}`);
-        socket.send(`NICK ${validation.login}`);
+        socket.send("PASS SCHMOOPIIE");
+        socket.send(`NICK ${this.anonymousNick}`);
       });
 
       socket.on("message", (data) => {
@@ -167,17 +164,12 @@ class TwitchAdapter {
             continue;
           }
           if (/NOTICE \* :Login authentication failed/i.test(line)) {
-            finishError("Twitch: Login authentication failed – Token wurde abgelehnt.");
-            try { socket.close(); } catch {}
-            continue;
-          }
-          if (/NOTICE \* :Improperly formatted auth/i.test(line)) {
-            finishError("Twitch: OAuth-Anmeldung ist falsch formatiert.");
+            finishError("Twitch hat die anonyme Chat-Verbindung abgelehnt.");
             try { socket.close(); } catch {}
             continue;
           }
           if (/^:tmi\.twitch\.tv 001 /i.test(line)) {
-            authenticated = true;
+            registered = true;
             if (socket.readyState === WebSocket.OPEN) socket.send(`JOIN #${this.channel}`);
             finishOk();
             continue;
@@ -190,12 +182,11 @@ class TwitchAdapter {
       socket.on("close", () => {
         this.socket = null;
         this.connectPromise = null;
-        if (!authenticated && !settled && !this.manualStop) {
-          finishError("Twitch hat die Verbindung vor der Anmeldung geschlossen.");
+        if (!registered && !settled && !this.manualStop) {
+          finishError("Twitch hat die Verbindung vor dem Kanalbeitritt geschlossen.");
           return;
         }
-        if (!this.manualStop) this.setStatus({ state: "disconnected", connected: false });
-        else this.setStatus({ state: "stopped", connected: false });
+        this.setStatus({ state: this.manualStop ? "stopped" : "disconnected", connected: false });
       });
     });
 
@@ -233,15 +224,8 @@ class TwitchAdapter {
     });
   }
 
-  async sendChat(text) {
-    const message = String(text || "").trim();
-    if (!message) throw new Error("Nachricht ist leer.");
-    if (!this.scopes.includes("chat:edit")) throw new Error("Dem Twitch-Token fehlt chat:edit.");
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN || !this.status.connected) {
-      throw new Error("Twitch ist nicht verbunden.");
-    }
-    this.socket.send(`PRIVMSG #${this.channel} :${message.replace(/[\r\n]+/g, " ")}`);
-    return { ok: true };
+  async sendChat() {
+    throw new Error("Twitch ist in diesem Build ohne Anmeldung als Nur-Lesen-Chat verbunden. Senden ist deshalb deaktiviert.");
   }
 
   disconnect() {
