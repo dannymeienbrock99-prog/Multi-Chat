@@ -20,7 +20,7 @@
     return `
       <div class="config-card" id="twitchDirectCard">
         <h3>Twitch</h3>
-        <p>Twitch-Chat direkt lesen – ohne Client ID, ohne OAuth-Feld und ohne Access-Token-Eingabe.</p>
+        <p>Twitch-Chat direkt lesen – ohne zusätzliche Anmeldedaten.</p>
         <div class="field-grid">
           ${field("Channel / Twitch-URL", "twChannel", c.channel || "crazy_batto")}
         </div>
