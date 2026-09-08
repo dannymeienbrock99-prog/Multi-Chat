@@ -4,7 +4,7 @@ Windows/Electron Streaming-Plattform für Multi-Chat, Moderation, OBS-Overlays u
 
 ## Neu in 1.1.0
 
-- `Programm hintergund.png` als vollflächiger Programm-Hintergrund, mit einstellbarer Abdunklung.
+- Das hochgeladene CRAZY_BATTO-Drachenmotiv wird als vollflächiger Programm-Hintergrund verwendet, inklusive einstellbarer Abdunklung.
 - Medien-Pools mit Zufalls-/Sequenzmodus, Medienauswahl, Lautstärke, Anzeigedauer, Wiederholungsschutz und Test.
 - TTS mit Windows-SAPI-Stimmen, automatischer Erkennung verbundener Audio-Ausgänge, gezielter Geräteausgabe und Lautstärkeregler.
 - Commands mit Plattformfilter für Alle / TikTok / Twitch / CNG / YouTube / Lokal und frei kombinierbaren Multi-Actions.
@@ -27,7 +27,7 @@ Windows/Electron Streaming-Plattform für Multi-Chat, Moderation, OBS-Overlays u
 
 ## Build-Status
 
-GitHub Actions Run `34184371913`:
+GitHub Actions Run `34184593999`:
 - Syntax-Check: erfolgreich
 - Core-Smoke-Test: erfolgreich
 - Windows-NSIS-Installer: erfolgreich
