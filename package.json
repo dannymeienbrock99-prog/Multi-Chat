@@ -2,7 +2,7 @@
   "name": "batto-obs-tool",
   "version": "2.1.0",
   "description": "Batto OBS Tool 2.1 – modular local-first Multi-Chat, Event Core, OBS, Overlay and Media platform",
-  "main": "electron/main21.cjs",
+  "main": "electron/bootstrap.cjs",
   "author": "Crazy_Batto",
   "license": "MIT",
   "private": true,
