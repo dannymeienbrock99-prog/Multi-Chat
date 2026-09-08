@@ -1,7 +1,7 @@
 {
-  "name": "batto-multi-chat-platform",
-  "version": "1.1.0",
-  "description": "CRAZY_BATTO Multi-Chat Platform for Twitch, TikTok/TikFinity, YouTube, CNG and OBS",
+  "name": "batto-obs-tool",
+  "version": "2.1.0",
+  "description": "Batto OBS Tool 2.1 – modular local-first Multi-Chat, Event Core, OBS, Overlay and Media platform",
   "main": "electron/main.cjs",
   "author": "Crazy_Batto",
   "license": "MIT",
@@ -28,18 +28,18 @@
     "electron-builder": "^26.0.12"
   },
   "build": {
-    "appId": "de.crazybatto.multichatplatform",
-    "productName": "CRAZY_BATTO Multi-Chat Platform",
-    "artifactName": "CRAZY-BATTO-Multi-Chat-Setup-${version}.${ext}",
+    "appId": "de.crazybatto.battoobstool",
+    "productName": "Batto OBS Tool 2.1",
+    "artifactName": "Batto-OBS-Tool-2.1-Setup-${version}.${ext}",
     "directories": { "output": "dist" },
-    "files": ["electron/**/*", "src/**/*", "package.json", "README.md"],
+    "files": ["electron/**/*", "src/**/*", "scripts/restore-app.cjs", "package.json", "README.md"],
     "win": { "target": ["nsis"], "icon": "src/assets/icon.png" },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "CRAZY_BATTO Multi-Chat"
+      "shortcutName": "Batto OBS Tool 2.1"
     }
   }
 }
