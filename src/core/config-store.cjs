@@ -175,8 +175,21 @@ class ConfigStore {
   validate(candidate) { return validateConfig(candidate); }
 
   atomicWrite(file,data) {
-    const tmp=`${file}.tmp`; fs.writeFileSync(tmp,data,'utf8'); const fd=fs.openSync(tmp,'r');
-    try{fs.fsyncSync(fd);}finally{fs.closeSync(fd);} fs.renameSync(tmp,file);
+    const tmp=`${file}.tmp`;
+    fs.writeFileSync(tmp,data,'utf8');
+    let fd=null;
+    try {
+      // Windows benötigt für FlushFileBuffers ein beschreibbares Handle; ein reines 'r'-Handle kann EPERM liefern.
+      fd=fs.openSync(tmp,process.platform==='win32'?'r+':'r');
+      try { fs.fsyncSync(fd); }
+      catch (error) {
+        // Auf Dateisystemen ohne fsync-Unterstützung bleibt die atomare tmp->rename-Garantie erhalten.
+        if (!['EPERM','EINVAL','ENOSYS','ENOTSUP'].includes(error?.code)) throw error;
+      }
+    } finally {
+      if (fd!==null) { try{fs.closeSync(fd);}catch{} }
+    }
+    fs.renameSync(tmp,file);
   }
 
   save() {
