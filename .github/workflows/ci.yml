@@ -66,6 +66,19 @@ jobs:
         run: npm run check && npm run smoke && npm run test:storage && npm run test:core && npm run test:runtime
       - name: Build installer with decoded image verification
         run: npm run pack:win
+      - name: Test packaged app independently of the installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:BATTO_QA_DIR = Join-Path $env:RUNNER_TEMP 'batto-packaged-qa'
+          $exe = Join-Path (Get-Location) 'dist\win-unpacked\Batto OBS Tool 2.1.exe'
+          $process = Start-Process -FilePath $exe -ArgumentList '--batto-qa' -WorkingDirectory (Split-Path $exe) -PassThru
+          if (-not $process.WaitForExit(90000)) { Stop-Process -Id $process.Id -Force; throw 'Packaged app QA timed out' }
+          $report = Join-Path $env:BATTO_QA_DIR 'result.json'
+          if (-not (Test-Path $report)) { throw 'Packaged app produced no QA report' }
+          $result = Get-Content $report -Raw | ConvertFrom-Json
+          $result.checks | ForEach-Object { Write-Host "PASS: $_" }
+          if (-not $result.ok -or $process.ExitCode -ne 0) { throw "Packaged app QA failed: $($result.error)" }
       - name: Install and test real Electron UI and IPC
         shell: pwsh
         run: |
@@ -93,6 +106,8 @@ jobs:
           path: |
             ${{ runner.temp }}/batto-qa-report/result.json
             ${{ runner.temp }}/batto-qa-report/dashboard.png
+            ${{ runner.temp }}/batto-packaged-qa/result.json
+            ${{ runner.temp }}/batto-packaged-qa/dashboard.png
           if-no-files-found: warn
       - name: Upload verified Windows installer
         uses: actions/upload-artifact@v4
