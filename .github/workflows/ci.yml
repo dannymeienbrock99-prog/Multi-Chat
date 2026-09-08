@@ -3,10 +3,18 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      run_four_hour_soak:
+        description: 'Run 4 hour soak test'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
-  syntax-smoke:
+  core-acceptance:
     runs-on: ubuntu-latest
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -16,10 +24,22 @@ jobs:
         run: npm run check
       - name: Core smoke test
         run: npm run smoke
+      - name: Core 2.1 acceptance
+        run: npm run test:core
+      - name: 500 events per second for 60 seconds
+        env:
+          STRESS_SECONDS: 60
+          STRESS_RATE: 500
+        run: npm run stress
+      - name: Quick soak regression
+        env:
+          SOAK_MINUTES: 1
+        run: node scripts/soak.cjs
 
   windows-installer:
-    needs: syntax-smoke
+    needs: core-acceptance
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -32,6 +52,20 @@ jobs:
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: Batto-Multi-Chat-Windows
+          name: Batto-OBS-Tool-2.1-Windows
           path: dist/*.exe
           if-no-files-found: error
+
+  soak-4h:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_four_hour_soak }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 260
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Four hour soak acceptance
+        env:
+          SOAK_MINUTES: 240
+        run: npm run soak
