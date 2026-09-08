@@ -13,24 +13,36 @@ function esc(value) {
     .replaceAll("'", '&#039;');
 }
 
-function isLocal(req) {
+function isLoopback(req) {
   const ip = String(req.socket?.remoteAddress || '');
   return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
 }
 
 class OverlayServer {
-  constructor({ host = '127.0.0.1', port = 8787, chatCore, configStore }) {
+  constructor({ host = '127.0.0.1', port = 17777, chatCore, configStore }) {
     this.host = host;
-    this.port = port;
+    this.port = Number(port) || 17777;
     this.chatCore = chatCore;
     this.configStore = configStore;
     this.server = null;
     this.wss = null;
+    this.startedAt = null;
     this.boundMessage = (message) => this.broadcast({ type: 'chat', data: message });
   }
 
+  allowRequest(req) {
+    const cfg = this.configStore.get().http || {};
+    return isLoopback(req) || cfg.allowLan === true;
+  }
+
   getStatus() {
-    return { running: Boolean(this.server?.listening), host: this.host, port: this.port };
+    return {
+      running: Boolean(this.server?.listening),
+      host: this.host,
+      port: this.port,
+      wsClients: this.wss?.clients?.size || 0,
+      uptimeMs: this.startedAt ? Date.now() - this.startedAt : 0
+    };
   }
 
   chatHtml() {
@@ -58,7 +70,7 @@ fetch('/state').then(r=>r.json()).then(s=>(s.messages||[]).slice(-5).forEach(add
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:Segoe UI;color:#fff}
 #box{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none}.card{max-width:75%;padding:20px 28px;border-radius:22px;background:rgba(1,13,32,.78);border:1px solid rgba(0,212,255,.38);box-shadow:0 20px 70px rgba(0,0,0,.38),0 0 30px rgba(0,145,255,.18);backdrop-filter:blur(14px);text-align:center;opacity:0;transform:scale(.92);transition:.25s}.card.show{opacity:1;transform:none}.title{font-size:14px;text-transform:uppercase;color:#61dcff}.big{font-size:32px;font-weight:900;margin-top:6px}
 </style></head><body><div id="box"><div id="card" class="card"><div class="title">${esc(kind)}</div><div id="big" class="big"></div></div></div><script>
-const card=document.getElementById('card'),big=document.getElementById('big');let t;const ws=new WebSocket('ws://'+location.host+'/ws');ws.onmessage=e=>{try{const x=JSON.parse(e.data);if(x.type!=='event')return;if('${kind}'!=='all'&&x.data?.event!=='${kind}')return;const d=x.data?.data||{};big.textContent=d.nickname||d.uniqueId||d.username||d.text||x.data?.event||'Event';card.classList.add('show');clearTimeout(t);t=setTimeout(()=>card.classList.remove('show'),5000)}catch{}};
+const card=document.getElementById('card'),big=document.getElementById('big');let t;const ws=new WebSocket('ws://'+location.host+'/ws');ws.onmessage=e=>{try{const x=JSON.parse(e.data);if(x.type!=='event')return;const evt=x.data||{};const normalizedType=evt.type||evt.event;if('${kind}'!=='all'&&normalizedType!=='${kind}')return;const d=evt.data||evt;big.textContent=d.user?.displayName||d.nickname||d.uniqueId||d.username||d.message?.text||d.text||normalizedType||'Event';card.classList.add('show');clearTimeout(t);t=setTimeout(()=>card.classList.remove('show'),5000)}catch{}};
 </script></body></html>`;
   }
 
@@ -69,7 +81,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent
 const stage=document.getElementById('stage');const ws=new WebSocket('ws://'+location.host+'/ws');let current=null,timer=null;
 function clear(){clearTimeout(timer);if(current){try{current.pause?.()}catch{};current.remove();current=null}stage.innerHTML=''}
 function play(d){clear();if(!d?.mediaId)return;const type=String(d.mediaType||'').toLowerCase();const url='/media/'+encodeURIComponent(d.mediaId);let el;if(['mp4','webm'].includes(type)){el=document.createElement('video');el.autoplay=true;el.playsInline=true}else if(['mp3','wav','ogg'].includes(type)){el=document.createElement('audio');el.autoplay=true}else{el=document.createElement('img')}el.src=url;el.className='fade';if('volume'in el)el.volume=Math.max(0,Math.min(1,Number(d.volume??1)));stage.append(el);current=el;const seconds=Number(d.durationSeconds||0);if(seconds>0)timer=setTimeout(clear,seconds*1000);else if(el.tagName==='AUDIO'||el.tagName==='VIDEO')el.onended=clear;else timer=setTimeout(clear,8000);el.play?.().catch(()=>{})}
-ws.onmessage=e=>{try{const x=JSON.parse(e.data);if(x.type==='event'&&x.data?.event==='media')play(x.data.data||{})}catch{}};
+ws.onmessage=e=>{try{const x=JSON.parse(e.data);if(x.type==='event'&&(x.data?.event==='media'||x.data?.type==='custom'&&x.data?.data?.event==='media'))play(x.data.data||{})}catch{}};
 </script></body></html>`;
   }
 
@@ -97,51 +109,58 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent
     app.disable('x-powered-by');
     app.use(express.json({ limit: '256kb' }));
 
-    app.get('/health', (_req, res) => res.json({ ok: true, service: 'crazy-batto-multi-chat', port: this.port }));
+    app.get('/health', (_req, res) => res.json({ ok: true, service: 'batto-obs-tool-2.1', ...this.getStatus() }));
     app.get('/state', (_req, res) => res.json({ messages: this.chatCore.getMessages().slice(-100) }));
     app.get(['/overlay/chat', '/overlay/all'], (_req, res) => res.type('html').send(this.chatHtml()));
+    app.get(['/overlay/alerts', '/overlay/events'], (_req, res) => res.type('html').send(this.eventHtml('all')));
     app.get('/overlay/gifts', (_req, res) => res.type('html').send(this.eventHtml('gift')));
     app.get('/overlay/follow', (_req, res) => res.type('html').send(this.eventHtml('follow')));
-    app.get('/overlay/subs', (_req, res) => res.type('html').send(this.eventHtml('subscribe')));
+    app.get('/overlay/subs', (_req, res) => res.type('html').send(this.eventHtml('sub')));
     app.get('/overlay/media', (_req, res) => res.type('html').send(this.mediaHtml()));
     app.get('/cohost/tiktok', (_req, res) => res.type('html').send(this.cohostHtml('tiktok')));
     app.get('/cohost/twitch', (_req, res) => res.type('html').send(this.cohostHtml('twitch')));
 
     app.get('/media/:id', (req, res) => {
-      if (!isLocal(req)) return res.sendStatus(403);
+      if (!this.allowRequest(req)) return res.sendStatus(403);
       const media = (this.configStore.get().media || []).find((item) => item.id === req.params.id);
       if (!media?.path || !fs.existsSync(media.path)) return res.sendStatus(404);
       res.sendFile(path.resolve(media.path));
     });
 
-    app.get('/font/custom', (_req, res) => {
-      const p = this.configStore.get().chatDesign?.customFontPath;
-      if (!p || !fs.existsSync(p)) return res.sendStatus(404);
-      res.sendFile(path.resolve(p));
+    app.get('/font/custom', (req, res) => {
+      if (!this.allowRequest(req)) return res.sendStatus(403);
+      const fontPath = this.configStore.get().chatDesign?.customFontPath;
+      if (!fontPath || !fs.existsSync(fontPath)) return res.sendStatus(404);
+      res.sendFile(path.resolve(fontPath));
     });
 
     app.post('/api/ingest', (req, res) => {
-      if (!isLocal(req)) return res.status(403).json({ ok: false });
+      if (!this.allowRequest(req)) return res.status(403).json({ ok: false, error: 'local only' });
       const body = req.body || {};
       if (body.type === 'chat' || body.message || body.text) {
         const message = this.chatCore.ingest(body.data || body);
         return res.json({ ok: Boolean(message) });
       }
       this.emitEvent(body);
-      res.json({ ok: true });
+      return res.json({ ok: true });
     });
 
     this.server = http.createServer(app);
-    this.wss = new WebSocketServer({ server: this.server, path: '/ws' });
+    this.wss = new WebSocketServer({ server: this.server, path: '/ws', maxPayload: 256 * 1024 });
     this.wss.on('connection', (ws, req) => {
-      if (!isLocal(req)) {
+      if (!this.allowRequest(req)) {
         ws.close(1008, 'local only');
         return;
       }
-      ws.send(JSON.stringify({ type: 'hello', data: { service: 'CRAZY_BATTO', port: this.port } }));
+      const maxClients = Math.max(1, Number(this.configStore.get().http?.maxWsClients || 20));
+      if (this.wss.clients.size > maxClients) {
+        ws.close(1013, 'client limit');
+        return;
+      }
+      ws.send(JSON.stringify({ type: 'hello', data: { service: 'Batto OBS Tool 2.1', port: this.port } }));
     });
 
-    const listen = (port) => new Promise((resolve, reject) => {
+    await new Promise((resolve, reject) => {
       const onError = (error) => {
         this.server.off('listening', onListen);
         reject(error);
@@ -152,29 +171,19 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent
       };
       this.server.once('error', onError);
       this.server.once('listening', onListen);
-      this.server.listen(port, this.host);
+      this.server.listen(this.port, this.host);
+    }).catch((error) => {
+      if (error.code === 'EADDRINUSE') {
+        const err = new Error(`Overlay-Port ${this.port} ist belegt. Der Port wird nicht automatisch geändert.`);
+        err.code = 'OVERLAY_PORT_IN_USE';
+        throw err;
+      }
+      throw error;
     });
 
-    let last;
-    const requested = this.port;
-    for (let candidate = requested; candidate <= Math.min(65535, requested + 10); candidate++) {
-      try {
-        this.port = candidate;
-        await listen(candidate);
-        last = null;
-        break;
-      } catch (error) {
-        last = error;
-        if (error.code !== 'EADDRINUSE') throw error;
-        this.server = http.createServer(app);
-        this.wss = new WebSocketServer({ server: this.server, path: '/ws' });
-      }
-    }
-    if (last) throw last;
-    if (this.port !== requested) this.configStore.merge({ http: { port: this.port } });
-
+    this.startedAt = Date.now();
     this.chatCore.on('message', this.boundMessage);
-    this.chatCore.log('INFO', 'OBS', `Overlay-Server: http://${this.host}:${this.port}`);
+    this.chatCore.log('INFO', 'Overlay', `Overlay-Server: http://${this.host}:${this.port}`);
     return this.getStatus();
   }
 
@@ -184,7 +193,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent
     if (!this.wss) return;
     const text = JSON.stringify(payload);
     for (const client of this.wss.clients) {
-      if (client.readyState === 1) client.send(text);
+      if (client.readyState === 1 && client.bufferedAmount < 1024 * 1024) client.send(text);
     }
   }
 
@@ -198,15 +207,16 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent
     if (!this.server) return;
     const server = this.server;
     this.server = null;
+    this.startedAt = null;
     await new Promise((resolve) => server.close(() => resolve()));
   }
 
   async restart(host, port) {
     await this.stop();
     this.host = host || '127.0.0.1';
-    this.port = Number(port) || 8787;
+    this.port = Number(port) || 17777;
     return this.start();
   }
 }
 
-module.exports = { OverlayServer };
+module.exports = { OverlayServer, isLoopback };
