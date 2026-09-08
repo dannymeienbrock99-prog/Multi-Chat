@@ -1,0 +1,45 @@
+{
+  "name": "batto-multi-chat-platform",
+  "version": "1.1.0",
+  "description": "CRAZY_BATTO Multi-Chat Platform for Twitch, TikTok/TikFinity, YouTube, CNG and OBS",
+  "main": "electron/main.cjs",
+  "author": "Crazy_Batto",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "prestart": "node scripts/restore-app.cjs",
+    "start": "electron .",
+    "predev": "node scripts/restore-app.cjs",
+    "dev": "electron .",
+    "precheck": "node scripts/restore-app.cjs",
+    "check": "node scripts/check.cjs",
+    "presmoke": "node scripts/restore-app.cjs",
+    "smoke": "node scripts/smoke.cjs",
+    "prepack:win": "node scripts/restore-app.cjs",
+    "pack:win": "electron-builder --win nsis"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "obs-websocket-js": "^5.0.6",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "de.crazybatto.multichatplatform",
+    "productName": "CRAZY_BATTO Multi-Chat Platform",
+    "artifactName": "CRAZY-BATTO-Multi-Chat-Setup-${version}.${ext}",
+    "directories": { "output": "dist" },
+    "files": ["electron/**/*", "src/**/*", "package.json", "README.md"],
+    "win": { "target": ["nsis"], "icon": "src/assets/icon.png" },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "CRAZY_BATTO Multi-Chat"
+    }
+  }
+}

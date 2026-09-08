@@ -1,0 +1,11 @@
+const assert=require('assert');
+const {DEFAULT_CONFIG}=require('../src/core/config-store.cjs');
+const {ChatCore,normalizeMessage}=require('../src/core/chat-core.cjs');
+const {expand}=require('../src/core/action-engine.cjs');
+const cfg=structuredClone(DEFAULT_CONFIG);const core=new ChatCore(cfg);
+const m=normalizeMessage({platform:'TikTok',username:'User',text:'Hallo'});assert.equal(m.platform,'tiktok');assert.equal(m.message,'Hallo');
+core.ingest({platform:'twitch',username:'One',text:'Test'});assert.equal(core.getMessages().length,1);
+const mod=core.moderate({platform:'twitch',username:'One',action:'mute',reason:'Spam'});assert.equal(mod.ok,true);assert.equal(core.getModerationHistory().length,1);assert.equal(core.getModerationState().twitch.muted[0].reason,'Spam');
+const cfg2=structuredClone(DEFAULT_CONFIG);cfg2.filters.rules.push({id:'x',term:'spamwort',platform:'all',action:'hide',enabled:true});const core2=new ChatCore(cfg2);core2.ingest({platform:'youtube',username:'Two',text:'spamwort hier'});assert.equal(core2.getMessages().length,0);
+assert.equal(expand('Danke {user}',{user:'Batto'}),'Danke Batto');
+console.log('CRAZY_BATTO Multi-Chat 1.0 smoke test: OK');
