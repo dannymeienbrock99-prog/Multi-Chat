@@ -1,54 +1,90 @@
-# Batto Multi-Chat
+# CRAZY_BATTO Multi-Chat Platform 1.0.0
 
-Desktop-Multi-Chat für **Twitch, TikTok, CNG und YouTube** auf Basis der *Batto OBS Tool – Arbeitsanweisung V4 (04.09.2026)*.
+Moderne Electron-Desktopplattform für Multi-Chat, Moderation, OBS-Overlays und Stream-Automation.
 
-## Was dieser Build bereits kann
+## Oberfläche
 
-- Gemeinsamer Chat-Core mit normalisiertem Nachrichtenformat.
-- Tabs **Alle / Twitch / TikTok / CNG / YouTube**.
-- Entkoppeltes Chat-Fenster mit demselben Core und demselben Verlauf.
-- Rechtsklick auf Benutzernamen: Moderator hinzufügen/entfernen, stummschalten, blockieren, entstummen, entblocken.
-- Lokaler Moderationsverlauf und klare Kennzeichnung lokaler Aktionen.
-- Frei pflegbarer Chat-Filter mit Plattformwahl und Aktionen.
-- **AxelChat Bridge** über WebSocket, Standard `ws://127.0.0.1:8356`, inklusive Reconnect.
-- Direkter **Twitch Nur-Lesen-Chat** über IRC/WebSocket ohne Client-ID-Eingabe und ohne Token-Feld.
-- Twitch-Kanal kann als Kanalname, normale Twitch-URL oder Dashboard-Popout-URL angegeben werden.
-- Lokaler Testadapter für Entwicklungs- und Abnahmetests.
-- Lokaler OBS-HTTP/WebSocket-Server, Standard `127.0.0.1:8787`.
-- OBS-Chat-Browserquelle: `http://127.0.0.1:8787/overlay/chat`.
-- Chat-Design-Konfiguration für Schrift, Farben, Glow und Anzeigedauer.
-- Lokale Config-Speicherung plus JSON Import/Export und rotierende lokale Backups.
-- Fensterposition und -größe für Haupt- und entkoppeltes Fenster werden wiederhergestellt.
-- Originaler CRAZY_BATTO-Hintergrund aus der Arbeitsanweisung als vollflächiger Programm-Hintergrund.
-- CRAZY_BATTO-Team-Alpha-Grafik als Programm-/Installer-Icon; das veraltete Multi-Chat-Bild wird nicht verwendet.
-- Capability-Gating: Nicht vorhandene Plattformfunktionen werden **nicht** als erfolgreich simuliert.
+Die Anwendung verwendet das CRAZY_BATTO / Team-Alpha-Branding und eine moderne dunkelblaue Dashboard-Oberfläche. Enthalten sind:
 
-## Twitch
+- Multi-Chat mit Tabs **Alle / TikTok / Twitch / CNG / YouTube**
+- plattformgetrennte Moderation
+- Rechtsklick auf Chat-Namen: Moderator hinzufügen/entfernen, stummschalten, blockieren, entstummen, entblocken
+- Moderationsverlauf mit Grund, letzter Nachricht, ausführendem Benutzer, Plattform und Ergebnis
+- Chat-Filter
+- Twitch-Hologramm / Chat-Overlay mit Schriftart, eigener Schrift, Farben, Glow und Anzeigedauer
+- Co-Host mit 1/2/3/4/6/9 Plätzen, TikTok- und Twitch-Format
+- Commands, Hotkeys / Multi-Action und Events
+- Medien, Medien-Pools und TTS
+- Discord-Webhook
+- Backup / Import / Export
+- Statusleiste mit CPU, RAM und OBS-Daten
 
-Die normale Twitch-Einstellung dieses Builds enthält **kein OAuth-/Access-Token-Feld** und verlangt **keine Client ID**. Für das reine Lesen eines öffentlichen Twitch-Chats wird eine anonyme IRC-Verbindung verwendet.
+## Plattformen
 
-Beispiele für das Channel-Feld:
+### TikTok / TikFinity
+
+TikFinity wird lokal über WebSocket angebunden, Standard:
 
 ```text
-crazy_batto
-https://www.twitch.tv/crazy_batto
-https://dashboard.twitch.tv/popout/u/crazy_batto/stream-manager/chat
+ws://127.0.0.1:21213/
 ```
 
-Dieser Modus ist bewusst **Nur Lesen**. Twitch-Nachrichten senden und echte Twitch-Plattformmoderation werden in diesem Stand nicht als verfügbar dargestellt.
+Dafür ist kein Euler-Adapter erforderlich. Chat und von TikFinity gelieferte Events können in den gemeinsamen Core übernommen werden.
 
-## Absichtlich noch nicht als „fertig“ behauptet
+Zusätzlich kann AxelChat als lokale WebSocket-Bridge verwendet werden, Standard:
 
-Die Arbeitsanweisung fordert ausdrücklich, dass nicht verfügbare Plattformfunktionen nicht simuliert werden. Deshalb sind in diesem Stand folgende Punkte klar als noch nicht implementiert gekennzeichnet:
+```text
+ws://127.0.0.1:8356
+```
 
-- Twitch Chat-Senden und echte Twitch-Plattformmoderation
-- offizieller YouTube-Livechat-Adapter
-- TikFinity Local Bridge
-- optionaler direkter Euler-TikTok-Adapter
-- dokumentierte CNG-Plattformaktionen
-- Gifts/Follow/Media/Co-Host-Routen (antworten derzeit bewusst mit HTTP 501)
+### Twitch
 
-## Start
+Der sichtbare normale Twitch-Bereich enthält **kein OAuth-/Access-Token-Feld**. Der aktuelle Direktmodus liest öffentlichen Twitch-Chat ohne Token-Eingabe. Twitch-Senden und echte Twitch-Plattformmoderation werden in diesem Modus bewusst nicht als verfügbar simuliert.
+
+Das Channel-Feld akzeptiert Kanalnamen, normale Twitch-URLs und Dashboard-Popout-URLs.
+
+### YouTube
+
+YouTube-Live-Chat kann mit Live-Chat-ID und eigenem API-Key gelesen werden. Der API-Key wird nicht in der normalen Config gespeichert, sondern über Electron/Windows Secure Storage behandelt.
+
+### CNG
+
+CNG bleibt lokal/Bridge-basiert, solange keine belastbar dokumentierte allgemeine Schreib-/Moderationsschnittstelle vorliegt.
+
+## OBS
+
+OBS WebSocket und Overlay-Webserver sind getrennt:
+
+```text
+OBS WebSocket: ws://127.0.0.1:4455
+Overlay HTTP:  http://127.0.0.1:8787
+```
+
+Overlay-Routen:
+
+```text
+/overlay/chat
+/overlay/all
+/overlay/gifts
+/overlay/follow
+/overlay/subs
+/overlay/media
+/cohost/tiktok
+/cohost/twitch
+```
+
+Der Overlay-Webserver weicht bei einem belegten HTTP-Port auf den nächsten freien Port aus. OBS-WebSocket bleibt davon unberührt.
+
+## Sicherheit
+
+- Electron `contextIsolation` aktiv
+- keine Node-Integration im Renderer
+- lokale Ingest-/WebSocket-Routen auf Loopback beschränkt
+- OBS-Passwort, YouTube-API-Key und Discord-Webhook über Windows/Electron Secure Storage
+- Hotkeys benötigen einen konkreten Zielprozess
+- nicht vorhandene Plattformaktionen werden nicht als erfolgreich simuliert
+
+## Entwicklung
 
 ```bat
 npm install
@@ -63,33 +99,10 @@ npm start
 npm run pack:win
 ```
 
-Danach liegt der NSIS-Installer unter `dist/`.
-
-## Architektur
+Erwarteter Installer:
 
 ```text
-Electron Main
-├─ ConfigStore
-├─ ChatCore
-│  ├─ Normalisierung
-│  ├─ Chat-Filter
-│  ├─ lokale Moderation
-│  └─ Logs
-├─ Adapter
-│  ├─ Twitch IRC/WebSocket (anonym, Nur Lesen)
-│  ├─ AxelChat WebSocket
-│  └─ Mock/Test
-└─ OverlayServer
-   ├─ HTTP /overlay/chat
-   └─ WebSocket /ws
-
-Renderer
-├─ Multi-Chat
-├─ Rechtsklick-Moderation
-├─ Modul-Configs
-└─ OBS-URL / Status
+CRAZY-BATTO-Multi-Chat-Setup-1.0.0.exe
 ```
 
-## Sicherheits-/Verhaltensregel
-
-Nicht verfügbare Plattformaktionen dürfen nicht als erfolgreich simuliert werden. Der Twitch-Nur-Lesen-Modus speichert keine Twitch-Zugangsdaten.
+Die GitHub-CI führt Syntaxprüfung, Smoke-Test und Windows-NSIS-Build aus.
