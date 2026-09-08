@@ -1,39 +1,97 @@
-# CRAZY_BATTO Multi-Chat Platform 1.1.0
+# Batto OBS Tool 2.1
 
-Windows/Electron Streaming-Plattform für Multi-Chat, Moderation, OBS-Overlays und Stream-Automation.
+Windows/Electron Streaming-Plattform für Multi-Chat, Moderation, OBS, Overlays, Alerts, Automationen, TTS und Media.
 
-## Neu in 1.1.0
+Diese Branch folgt dem **Technischen Arbeitsauftrag 2.1 vom 08.09.2026**. Die Priorität liegt auf sauberer Modultrennung, stabilen Settings, reproduzierbaren Builds und Fehlerisolation.
 
-- Das hochgeladene CRAZY_BATTO-Drachenmotiv wird als vollflächiger Programm-Hintergrund verwendet, inklusive einstellbarer Abdunklung.
-- Medien-Pools mit Zufalls-/Sequenzmodus, Medienauswahl, Lautstärke, Anzeigedauer, Wiederholungsschutz und Test.
-- TTS mit Windows-SAPI-Stimmen, automatischer Erkennung verbundener Audio-Ausgänge, gezielter Geräteausgabe und Lautstärkeregler.
-- Commands mit Plattformfilter für Alle / TikTok / Twitch / CNG / YouTube / Lokal und frei kombinierbaren Multi-Actions.
-- Events mit Plattform, Eventtyp, Textfilter, Mindestwert und Multi-Actions.
-- Auto-Chat-Broadcast mit Zielplattformen, Intervall, Startverzögerung, Sequenz/Zufall und lokalem CNG-Overlay-Modus.
-- CNG: Creator-ID, Alert-Overlay, Ghost-Chat und lokal verschlüsselte OBS-Chat-URL mit `obsChatToken`.
-- Laufende Module erhalten Konfigurationsänderungen sofort über `config:changed`.
-- Zusätzliche Synchronisations-Einstellungen je Modul.
-- Persönliche Info in den Einstellungen: "Ich danke Dir Für alles Sarah Luna Ich hab Dich Lieb Dein Bruder Crazy_Batto".
+## 2.1 Architektur
+
+Die verbindliche Datenrichtung ist:
+
+```text
+Plattform-Connector
+      ↓
+Event Normalizer → Validierung → Dedup → Aggregation
+      ↓
+Event Core / Bus
+      ├─ Multi-Chat
+      ├─ Moderation / Audit
+      ├─ Rules / Commands / Hotkeys
+      ├─ TTS
+      ├─ Alerts
+      └─ Overlay Server → OBS Browser Source
+
+OBS Service ↔ obs-websocket 5.x
+FFmpeg Service ↔ Worker-Prozess
+```
+
+Neu angelegt sind getrennte Core-Module für:
+
+- `src/core/events/` – versioniertes Event-Schema, Normalizer, Dedupe, Aggregation, bounded Event-Bus und Event-Core
+- `src/core/connectors/` – Connector-Vertrag und isolierter Connector-Manager mit Timeout/Backoff
+- `src/core/settings/` – Validierung, Draft/Apply/Discard/Reset und separater Secrets-Service
+- `src/core/logging/` – strukturierte, Secret-bereinigte Logs
+- `src/core/health/` – Health-Snapshot für OBS, Overlay, Connectoren, Event-Core, FFmpeg und Settings
+- `src/core/storage/` – optionaler SQLite-WAL-Audit-Store mit DEGRADED-Fallback
+- `src/core/media/` – FFmpeg-Erkennung, Encoder-Test, beaufsichtigter Child Process und Media-Presets
+
+## Settings / User Data
+
+Laufzeitdaten liegen unter dem Electron-UserData-Pfad in `Batto-OBS-Tool/`:
+
+```text
+settings.json
+settings.backup.json
+secrets.bin
+profiles/
+data/
+assets/
+logs/
+backups/
+cache/
+```
+
+Alte `BattoMultiChat/config.json`-Daten werden beim ersten Start übernommen, wenn noch keine neue 2.1-Settings-Datei existiert.
+
+Settings werden validiert und atomar geschrieben. Secrets bleiben außerhalb der normalen Settings/Exporte.
 
 ## Ports
 
 - OBS WebSocket: `ws://127.0.0.1:4455`
-- CRAZY_BATTO Overlay-HTTP: `http://127.0.0.1:8787`
+- Batto Overlay HTTP/WS: `http://127.0.0.1:17777` und `ws://127.0.0.1:17777/ws`
 
-## Sicherheit
+Der Overlay-Port wechselt bei Konflikten **nicht mehr still auf einen anderen Port**. Ein belegter Port wird als klarer Fehler gemeldet.
 
-- Der CNG `obsChatToken` wird niemals in die Git-Konfiguration oder den öffentlichen Quellcode geschrieben. Die vollständige tokenisierte OBS-Chat-URL wird lokal über Electron/Windows `safeStorage` gespeichert.
-- Plattform-Schreibaktionen werden nur ausgeführt, wenn eine echte autorisierte Schreib-Verbindung vorhanden ist. CNG Auto-Broadcast kann ohne dokumentierte Schreib-Schnittstelle lokal im Multi-Chat/Overlay ausgegeben werden; ein Plattform-Post wird nicht simuliert.
+## Bestehende Funktionsmodule
 
-## Build-Status
+Die bisherigen 1.1-Funktionen bleiben die UI-Basis und werden schrittweise auf den 2.1-Core umgestellt:
 
-GitHub Actions Run `34184593999`:
-- Syntax-Check: erfolgreich
-- Core-Smoke-Test: erfolgreich
-- Windows-NSIS-Installer: erfolgreich
-- Artefakt: `CRAZY-BATTO-Multi-Chat-Setup-1.1.0.exe`
+- Multi-Chat TikTok / Twitch / YouTube / CNG
+- Rechtsklick-Moderation und Verlauf
+- TikFinity Local Bridge und AxelChat
+- Twitch Nur-Lesen
+- YouTube Live-Chat
+- CNG Overlay-/Ghost-Integration
+- Auto-Broadcast
+- Commands, Events, Hotkeys / Multi-Action
+- Medien und Medien-Pools
+- TTS mit Audio-Ausgabe
+- Discord Webhook
+- Hologramm und Co-Host
+- OBS WebSocket 4455
+- Backups und synchronisierte Einstellungen
+- CRAZY_BATTO Programm-Hintergrund
 
-## Entwicklung
+## Sicherheitsregeln
+
+- keine privaten TikTok-Endpunkte, Signaturmechanismen, Cookie-Hacks oder Bypässe im Core
+- Loopback-only als Default für Overlay und interne WebSockets
+- Electron `contextIsolation`, keine Node-Integration im Renderer
+- Secrets via `safeStorage`
+- keine Dummy-Erfolgsmeldungen für nicht autorisierte Plattformaktionen
+- FFmpeg nur mit Argument-Arrays über `spawn`, nie über frei zusammengesetzte Shell-Strings
+
+## Tests
 
 ```bat
 npm install
@@ -42,8 +100,12 @@ npm run smoke
 npm start
 ```
 
-## Windows Installer
+Windows-Setup:
 
 ```bat
 npm run pack:win
 ```
+
+## Aktueller 2.1 Status
+
+Der neue Core ist als getrennte Schicht angelegt und durch Syntax-/Smoke-Tests abgesichert. Die vollständige Verdrahtung aller bestehenden UI-Module über Event-Core, Connector-Manager, Audit-Store, Health-Service und FFmpeg-Service erfolgt in der 2.1-Branch schrittweise nach der im Arbeitsauftrag vorgegebenen Reihenfolge. Erst wenn die Definition-of-Done-Checkliste vollständig erfüllt ist, wird 2.1 als fertig bezeichnet.
