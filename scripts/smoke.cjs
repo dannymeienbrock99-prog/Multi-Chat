@@ -51,13 +51,12 @@ eventCore.ingestChat({ platform: 'twitch', id: 'dedupe-1', username: 'A', text: 
 const duplicate = eventCore.ingestChat({ platform: 'twitch', id: 'dedupe-1', username: 'A', text: 'eins' }, 'mock');
 assert.equal(duplicate.duplicate, true);
 assert.equal(eventCore.getMetrics().dedupe.dropped, 1);
+eventCore.bus.drain();
+assert.equal(published, 1);
 eventCore.stop();
 
 assert.ok(PRESETS['tiktok-vertical']);
 assert.equal(PRESETS['ultrawide-5120x1440-split'].regions.map((r) => r.width).join('/'), '1706/1706/1708');
 assert.equal(expand('Danke {user}', { user: 'Batto' }), 'Danke Batto');
 
-setImmediate(() => {
-  assert.ok(published >= 1);
-  console.log('Batto OBS Tool 2.1 core smoke test: OK');
-});
+console.log('Batto OBS Tool 2.1 core smoke test: OK');
