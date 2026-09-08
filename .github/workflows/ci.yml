@@ -14,7 +14,7 @@ on:
 jobs:
   core-acceptance:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,6 +24,8 @@ jobs:
         run: npm run check
       - name: Core smoke test
         run: npm run smoke
+      - name: UI contract
+        run: npm run test:ui
       - name: Core 2.1 acceptance
         run: npm run test:core
       - name: 500 events per second for 60 seconds
@@ -35,6 +37,17 @@ jobs:
         env:
           SOAK_MINUTES: 1
         run: node scripts/soak.cjs
+      - name: Upload QA source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: Batto-OBS-Tool-2.1-QA-Source
+          path: |
+            electron/
+            src/
+            scripts/
+            package.json
+            README.md
+          if-no-files-found: error
 
   windows-installer:
     needs: core-acceptance
@@ -47,6 +60,8 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+      - name: Syntax and core verification on Windows
+        run: npm run check && npm run smoke && npm run test:core
       - name: Build Windows installer
         run: npm run pack:win
       - name: Upload installer
