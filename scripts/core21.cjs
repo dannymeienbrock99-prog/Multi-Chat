@@ -20,6 +20,7 @@ const { AlertQueue } = require('../src/core/alerts/alert-queue.cjs');
       assert.equal(migrated.version, DEFAULT_CONFIG.version);
       assert.equal(migrated.schemaVersion, 3);
       assert.equal(migrated.http.port, 17777);
+      assert.equal(migrated.unknownLegacyField, undefined);
     }
 
     const store = new ConfigStore(tmp);
@@ -69,11 +70,7 @@ const { AlertQueue } = require('../src/core/alerts/alert-queue.cjs');
     assert.equal(manager.status('good').connected, true);
     await manager.stopAll();
 
-    // Cancellable Multi-Action.
-    const engine = new ActionEngine({
-      getConfig: () => ({ commands:[], events:[], media:[], mediaPools:[], rules:{ maxConcurrentRuns:5, defaultTimeoutMs:5000, defaultFailurePolicy:'stop-sequence' } }),
-      sendChat: async () => ({ok:true})
-    });
+    const engine = new ActionEngine({ getConfig: () => ({ commands:[], events:[], media:[], mediaPools:[], rules:{ maxConcurrentRuns:5, defaultTimeoutMs:5000, defaultFailurePolicy:'stop-sequence' } }), sendChat: async () => ({ok:true}) });
     const rule = { id:'cancel-test', cooldownSeconds:0, actions:[{type:'delay',ms:3000},{type:'chat',platform:'local',text:'should-not-run'}] };
     const running = engine.executeRule(rule, { platform:'local', user:'Tester' }, 'command');
     await new Promise((r) => setTimeout(r, 30));
@@ -83,17 +80,17 @@ const { AlertQueue } = require('../src/core/alerts/alert-queue.cjs');
     assert.equal(cancelled.cancelled, true);
     assert.equal(engine.active().length, 0);
 
-    // Alert queue is bounded and serializes display.
-    const queue = new AlertQueue({ maxQueue:2, defaultDurationMs:50, mode:'priority' });
+    const queue = new AlertQueue({ maxQueue:2, defaultDurationMs:250, mode:'priority' });
     let shown = 0;
     queue.on('show', () => { shown += 1; });
-    queue.enqueue({ eventId:'q1', type:'gift', priority:1, durationMs:50 });
-    queue.enqueue({ eventId:'q2', type:'follow', priority:1, durationMs:50 });
-    queue.enqueue({ eventId:'q3', type:'sub', priority:5, durationMs:50 });
-    queue.enqueue({ eventId:'q4', type:'gift', priority:2, durationMs:50 });
+    queue.enqueue({ eventId:'q1', type:'gift', priority:1, durationMs:250 });
+    queue.enqueue({ eventId:'q2', type:'follow', priority:1, durationMs:250 });
+    queue.enqueue({ eventId:'q3', type:'sub', priority:5, durationMs:250 });
+    queue.enqueue({ eventId:'q4', type:'gift', priority:2, durationMs:250 });
     assert.ok(queue.stats().queued <= 2);
-    await new Promise((r) => setTimeout(r, 180));
+    await new Promise((r) => setTimeout(r, 800));
     assert.ok(shown >= 2);
+    assert.ok(queue.stats().dropped >= 1);
     queue.clear();
 
     const redacted = redact({ token:'abc', password:'xyz', nested:{ apiKey:'123', safe:'ok' } });
