@@ -15,6 +15,8 @@
     "check": "node scripts/check.cjs",
     "presmoke": "node scripts/restore-app.cjs",
     "smoke": "node scripts/smoke.cjs",
+    "pretest:ui": "node scripts/restore-app.cjs",
+    "test:ui": "node scripts/ui-contract.cjs",
     "test:core": "node scripts/core21.cjs",
     "stress": "node scripts/stress.cjs",
     "soak": "node scripts/soak.cjs",
