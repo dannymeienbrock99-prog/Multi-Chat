@@ -52,7 +52,7 @@ jobs:
   windows-installer:
     needs: core-acceptance
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -64,6 +64,26 @@ jobs:
         run: npm run check && npm run smoke && npm run test:core
       - name: Build Windows installer
         run: npm run pack:win
+      - name: Install and launch smoke test
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Get-ChildItem 'dist\Batto-OBS-Tool-2.1-Setup-*.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'Windows installer not found.' }
+          Start-Process -FilePath $installer.FullName -ArgumentList '/S' -Wait
+          $searchRoots = @("$env:LOCALAPPDATA\Programs", "$env:ProgramFiles", "$env:ProgramFiles(x86)") | Where-Object { $_ -and (Test-Path $_) }
+          $exe = $null
+          foreach ($root in $searchRoots) {
+            $exe = Get-ChildItem $root -Recurse -Filter 'Batto OBS Tool 2.1.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($exe) { break }
+          }
+          if (-not $exe) { throw 'Installed Batto OBS Tool 2.1 executable not found.' }
+          $process = Start-Process -FilePath $exe.FullName -PassThru
+          Start-Sleep -Seconds 12
+          $process.Refresh()
+          if ($process.HasExited) { throw "Batto OBS Tool exited during startup smoke test with code $($process.ExitCode)." }
+          Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+          Write-Host "Installed and launched successfully: $($exe.FullName)"
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
