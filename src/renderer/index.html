@@ -3,110 +3,109 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ws://127.0.0.1:* http://127.0.0.1:*;">
-  <title>Batto Multi-Chat</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: file: http: https:; media-src 'self' file: blob:; frame-src http: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ws://127.0.0.1:* http://127.0.0.1:* ws://localhost:* https://www.googleapis.com;">
+  <title>CRAZY_BATTO Multi-Chat Platform</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <div class="background" aria-hidden="true"></div>
-  <div class="app-shell">
+  <div class="bg-watermark" aria-hidden="true"></div>
+  <div class="app" id="app">
     <header class="topbar">
-      <div class="brand">
-        <strong>BATTO MULTI-CHAT</strong>
-        <span>Twitch · TikTok · CNG · YouTube</span>
+      <div class="brand-block">
+        <img src="../assets/brand-logo.jpg" class="brand-logo" alt="CRAZY_BATTO Team Alpha">
+        <div><div class="brand-title">CRAZY_BATTO <span>Multi-Chat Platform</span></div><div class="brand-sub">Dein Stream. Alle Chats. Eine Plattform. Team Alpha.</div></div>
       </div>
-      <div class="top-actions">
-        <span id="serverStatus" class="status-pill">HTTP …</span>
-        <button id="detachBtn" class="icon-button" title="Chat entkoppeln" aria-label="Chat entkoppeln">↗</button>
-        <button id="settingsBtn" class="icon-button" title="Einstellungen" aria-label="Einstellungen">⚙</button>
+      <div class="top-status">
+        <span class="chip" id="obsChip"><i></i>OBS 4455</span>
+        <span class="chip" id="overlayChip"><i></i>Overlay 8787</span>
+        <span class="chip" id="tikfinityChip"><i></i>TikFinity Bridge</span>
+        <span class="chip ok"><i></i>Online</span>
+        <button class="icon-btn" id="detachBtn" title="Chat entkoppeln">↗</button>
       </div>
     </header>
 
-    <main class="workspace">
-      <section class="chat-panel glass">
-        <nav class="platform-tabs" id="platformTabs" aria-label="Plattformfilter"></nav>
-        <div id="chatList" class="chat-list" aria-live="polite">
-          <div id="emptyState" class="empty-state">
-            <strong>Noch keine Nachrichten</strong>
-            <span>Twitch oder AxelChat verbinden oder eine Testnachricht senden.</span>
-          </div>
-        </div>
-
-        <form id="composer" class="composer">
-          <select id="sendPlatform" aria-label="Zielplattform">
-            <option value="local">Lokal / Test</option>
-            <option value="twitch">Twitch</option>
-            <option value="tiktok">TikTok</option>
-            <option value="cng">CNG</option>
-            <option value="youtube">YouTube</option>
-          </select>
-          <input id="messageInput" maxlength="500" autocomplete="off" placeholder="Nachricht schreiben …" />
-          <button class="primary" type="submit">Senden</button>
-        </form>
-        <div id="composerHint" class="composer-hint">Plattform-Senden wird nur freigeschaltet, wenn der jeweilige Adapter es wirklich unterstützt.</div>
-      </section>
-
-      <aside class="side-panel glass">
-        <div class="section-title"><strong>Verbindungen</strong><button id="testMessageBtn">Test</button></div>
-        <div class="connection-row">
-          <div><span class="dot" id="axelDot"></span><strong>AxelChat Bridge</strong><small id="axelStatusText">Nicht verbunden</small></div>
-          <button id="axelConnectBtn">Verbinden</button>
-        </div>
-        <div class="capability-grid">
-          <div><span>Twitch</span><small>Direkter IRC-Adapter unter Plattformen</small></div>
-          <div><span>TikTok</span><small>AxelChat/TikFinity/Euler optional</small></div>
-          <div><span>CNG</span><small>Lokaler Status bis API verfügbar</small></div>
-          <div><span>YouTube</span><small>Offizieller Adapter vorgesehen</small></div>
-        </div>
-
-        <div class="section-title"><strong>Moderation</strong><span>lokal / Plattform getrennt</span></div>
-        <div id="moderationSummary" class="summary-list"></div>
-
-        <div class="section-title"><strong>OBS Browserquelle</strong></div>
-        <div class="url-box">
-          <code id="overlayUrl">http://127.0.0.1:8787/overlay/chat</code>
-          <button id="openOverlayBtn">Öffnen</button>
-        </div>
-
-        <div class="section-title"><strong>Letzte Aktivität</strong></div>
-        <div id="miniLog" class="mini-log"></div>
+    <div class="shell">
+      <aside class="sidebar" id="sidebar">
+        <nav id="mainNav">
+          <button class="nav-item active" data-view="dashboard"><b>▣</b><span>Multi-Chat</span></button>
+          <button class="nav-item" data-view="moderation"><b>♢</b><span>Moderation</span></button>
+          <button class="nav-item" data-view="filters"><b>▽</b><span>Chat-Filter</span></button>
+          <button class="nav-item" data-view="hologram"><b>✦</b><span>Twitch-Hologramm</span></button>
+          <button class="nav-item" data-view="cohost"><b>♧</b><span>Co-Host</span></button>
+          <button class="nav-item" data-view="platforms"><b>⇄</b><span>Plattformen</span></button>
+          <button class="nav-item" data-view="commands"><b>▤</b><span>Commands</span></button>
+          <button class="nav-item" data-view="hotkeys"><b>⌨</b><span>Hotkeys / Multi-Action</span></button>
+          <button class="nav-item" data-view="events"><b>⚡</b><span>Events</span></button>
+          <button class="nav-item" data-view="media"><b>▧</b><span>Medien</span></button>
+          <button class="nav-item" data-view="pools"><b>▦</b><span>Medien-Pools</span></button>
+          <button class="nav-item" data-view="tts"><b>◖</b><span>TTS</span></button>
+          <button class="nav-item" data-view="discord"><b>☁</b><span>Discord</span></button>
+          <button class="nav-item" data-view="backups"><b>⬡</b><span>Backups</span></button>
+          <button class="nav-item" data-view="settings"><b>⚙</b><span>Einstellungen</span></button>
+        </nav>
+        <div class="sidebar-brand"><img src="../assets/brand-logo.jpg" alt="CRAZY_BATTO"><span>STRONGER TOGETHER.</span></div>
       </aside>
-    </main>
+
+      <main class="content" id="content">
+        <section class="view active" data-view-panel="dashboard">
+          <div class="dashboard-grid">
+            <section class="card chat-card">
+              <div class="card-head"><div><h2>Multi-Chat</h2><p>Alle Chats in einer Ansicht – nie wieder etwas verpassen.</p></div><span class="live-pill"><i></i>Live</span></div>
+              <div class="tabs" id="chatTabs"></div>
+              <div class="chat-list" id="chatList"></div>
+              <form class="composer" id="composer"><select id="sendPlatform"><option value="local">Lokal / Test</option><option value="twitch">Twitch</option><option value="tiktok">TikTok</option><option value="cng">CNG</option><option value="youtube">YouTube</option></select><input id="messageInput" maxlength="500" placeholder="Nachricht schreiben…"><button class="primary" type="submit">➤</button></form>
+            </section>
+
+            <section class="card moderation-card">
+              <div class="card-head"><div><h2>Moderation</h2><p>Behalte die Kontrolle über deine Community.</p></div><span class="live-pill"><i></i>Automod aktiv</span></div>
+              <div class="tabs platform-switch" id="modTabs"></div>
+              <div class="mod-columns" id="modColumns"></div>
+              <div class="history-wrap"><div class="section-line"><strong>Moderationsverlauf</strong><select id="historyPlatform"><option value="all">Alle Plattformen</option><option>tiktok</option><option>twitch</option><option>cng</option><option>youtube</option></select></div><div class="table-scroll"><table><thead><tr><th>Zeit</th><th>Name</th><th>Aktion</th><th>Grund</th><th>Letzte Nachricht</th><th>Durch</th><th>Plattform</th><th>Ergebnis</th></tr></thead><tbody id="historyBody"></tbody></table></div></div>
+            </section>
+
+            <section class="card holo-card">
+              <div class="card-head"><div><h2>Twitch-Hologramm</h2><p>Chat als stilvolles Hologramm für OBS.</p></div><button id="previewHologram">Vorschau</button></div>
+              <div class="holo-grid"><div><label class="check"><input type="checkbox" id="holoUserEnabled"> Benutzername gestalten</label><label class="check"><input type="checkbox" id="holoMessageEnabled"> Chat-Nachricht gestalten</label><label>Schriftart</label><select id="holoFont"><option>Segoe UI</option><option>Arial</option><option>Impact</option><option>Verdana</option><option>BattoCustom</option></select><button class="soft" id="importFontBtn">Eigene Schrift laden</button></div><div><label>Name</label><input type="color" id="holoUserColor"><label>Chat-Nachricht</label><input type="color" id="holoMsgColor"></div><div><label>Effekt / Glow</label><input type="range" id="holoGlow" min="0" max="40"><label>Deckkraft</label><input type="range" id="holoOpacity" min="20" max="100"></div></div>
+              <div class="url-row"><span>OBS-Browserquelle</span><code id="holoUrl"></code><button data-copy="holo">URL kopieren</button></div>
+            </section>
+
+            <section class="card cohost-card">
+              <div class="card-head"><div><h2>Co-Host</h2><p>Flexible Gast-Anordnung für TikTok und Twitch.</p></div><label class="switch"><input type="checkbox" id="coEnabled"><span>Aktiv</span></label></div>
+              <div class="cohost-controls"><div><label>Format</label><div class="segmented"><button data-co-format="tiktok" class="active">TikTok<br><small>1080 × 1920</small></button><button data-co-format="twitch">Twitch<br><small>1920 × 1080</small></button></div></div><div><label>Plätze</label><select id="coPlaces"><option>1</option><option>2</option><option>3</option><option selected>4</option><option>6</option><option>9</option></select></div></div>
+              <div class="cohost-body"><div class="slot-list" id="coSlotList"></div><div class="co-preview" id="coPreview"></div></div>
+              <div class="co-output"><div><span>TikTok</span><code id="coTikUrl"></code><button data-copy="coTik">⧉</button></div><div><span>Twitch</span><code id="coTwUrl"></code><button data-copy="coTw">⧉</button></div></div>
+            </section>
+
+            <section class="card connections-card">
+              <div class="card-head"><div><h2>Plattformen & Verbindungen</h2><p>Lokale Bridges und Direktverbindungen.</p></div></div>
+              <div class="connections" id="connectionList"></div>
+              <button class="primary wide" data-open-view="platforms">Verbindungen verwalten</button>
+            </section>
+          </div>
+        </section>
+
+        <section class="view module-view" data-view-panel="moderation"><div class="module-head"><div><h1>Moderation</h1><p>Plattformgetrennte Moderatoren, Stummschaltungen, Blockierungen und Verlauf.</p></div><button data-back-dashboard>← Dashboard</button></div><div class="module-card" id="moderationModule"></div></section>
+        <section class="view module-view" data-view-panel="filters"><div class="module-head"><div><h1>Chat-Filter</h1><p>Begriffe, Plattformen und automatische Aktionen.</p></div><button data-back-dashboard>← Dashboard</button></div><div class="module-card" id="filtersModule"></div></section>
+        <section class="view module-view" data-view-panel="hologram"><div class="module-head"><div><h1>Twitch-Hologramm</h1><p>Schrift, Farben, Glow und OBS-Overlay.</p></div><button data-back-dashboard>← Dashboard</button></div><div class="module-card" id="holoModule"></div></section>
+        <section class="view module-view" data-view-panel="cohost"><div class="module-head"><div><h1>Co-Host</h1><p>Plätze, Quellen und OBS-Ausgabe.</p></div><button data-back-dashboard>← Dashboard</button></div><div class="module-card" id="cohostModule"></div></section>
+        <section class="view module-view" data-view-panel="platforms"><div class="module-head"><div><h1>Plattformen & Verbindungen</h1><p>TikFinity lokal ohne Euler/API, AxelChat, Twitch, YouTube und OBS.</p></div><button data-back-dashboard>← Dashboard</button></div><div class="module-card" id="platformsModule"></div></section>
+        <section class="view module-view" data-view-panel="commands"><div class="module-head"><div><h1>Commands</h1><p>Eigene Chat-Befehle und Reaktionen.</p></div><button data-back-dashboard>← Dashboard</button></div><div class="module-card" id="commandsModule"></div></section>
+        <section class="view module-view" data-view-panel="hotkeys"><div class="module-head"><div><h1>Hotkeys / Multi-Action</h1><p>Windows-Hotkeys und sequenzielle Aktionen.</p></div><button data-back-dashboard>← Dashboard</button></div><div class="module-card" id="hotkeysModule"></div></section>
+        <section class="view module-view" data-view-panel="events"><div class="module-head"><div><h1>Events</h1><p>Gift, Follow, Like, Share und Subscribe aus TikFinity.</p></div><button data-back-dashboard>← Dashboard</button></div><div class="module-card" id="eventsModule"></div></section>
+        <section class="view module-view" data-view-panel="media"><div class="module-head"><div><h1>Medien</h1><p>Eigene MP3, WAV, MP4, WebM, GIF und Bilder.</p></div><button data-back-dashboard>← Dashboard</button></div><div class="module-card" id="mediaModule"></div></section>
+        <section class="view module-view" data-view-panel="pools"><div class="module-head"><div><h1>Medien-Pools</h1><p>Mehrere Medien zufällig oder nacheinander verwenden.</p></div><button data-back-dashboard>← Dashboard</button></div><div class="module-card" id="poolsModule"></div></section>
+        <section class="view module-view" data-view-panel="tts"><div class="module-head"><div><h1>TTS</h1><p>Text-to-Speech für Chat und Automationen.</p></div><button data-back-dashboard>← Dashboard</button></div><div class="module-card" id="ttsModule"></div></section>
+        <section class="view module-view" data-view-panel="discord"><div class="module-head"><div><h1>Discord</h1><p>Webhook-Benachrichtigungen aus Commands und Events.</p></div><button data-back-dashboard>← Dashboard</button></div><div class="module-card" id="discordModule"></div></section>
+        <section class="view module-view" data-view-panel="backups"><div class="module-head"><div><h1>Backups</h1><p>Konfiguration sichern, exportieren und wiederherstellen.</p></div><button data-back-dashboard>← Dashboard</button></div><div class="module-card" id="backupModule"></div></section>
+        <section class="view module-view" data-view-panel="settings"><div class="module-head"><div><h1>Einstellungen</h1><p>Allgemein, Oberfläche, HTTP/Overlay und Status.</p></div><button data-back-dashboard>← Dashboard</button></div><div class="module-card" id="settingsModule"></div></section>
+      </main>
+    </div>
+
+    <footer class="statusbar"><div><span class="status-dot ok"></span>System Online <span class="sep">|</span> Version 1.0.0 <span class="sep">|</span> Team Alpha</div><div class="metrics"><span>CPU <b id="cpuStat">–</b></span><meter id="cpuMeter" min="0" max="100"></meter><span>RAM <b id="ramStat">–</b></span><meter id="ramMeter" min="0" max="100"></meter><span>Upload <b id="uploadStat">–</b></span><span>FPS <b id="fpsStat">–</b></span><span>Bitrate <b id="bitrateStat">–</b></span></div><div id="clock"></div></footer>
   </div>
 
-  <div id="contextMenu" class="context-menu" hidden>
-    <button data-action="addModerator">Als Moderator hinzufügen</button>
-    <button data-action="removeModerator">Als Moderator entfernen</button>
-    <div></div>
-    <button data-action="mute">Stummschalten</button>
-    <button data-action="unmute">Entstummen</button>
-    <button data-action="block" class="danger">Blockieren</button>
-    <button data-action="unblock">Entblocken</button>
-  </div>
-
-  <div id="settings" class="drawer-backdrop" hidden>
-    <section class="settings-drawer glass">
-      <header>
-        <div><strong>EINSTELLUNGEN</strong><span>Jedes Modul besitzt eine eigene Config-Seite.</span></div>
-        <button id="closeSettingsBtn" class="icon-button">✕</button>
-      </header>
-      <div class="settings-body">
-        <nav id="settingsNav" class="settings-nav"></nav>
-        <div id="settingsPage" class="settings-page"></div>
-      </div>
-      <footer>
-        <button id="importBtn">Config importieren</button>
-        <button id="exportBtn">Config exportieren</button>
-        <span class="spacer"></span>
-        <button id="resetPageBtn">Zurücksetzen</button>
-        <button id="saveSettingsBtn" class="primary">Speichern</button>
-      </footer>
-    </section>
-  </div>
-
+  <div id="contextMenu" class="context-menu" hidden><button data-action="addModerator">♢ Als Moderator hinzufügen</button><button data-action="removeModerator">♢ Als Moderator entfernen</button><div></div><button data-action="mute">🔇 Stummschalten</button><button data-action="block" class="danger">⊘ Blockieren</button><button data-action="unmute">🔊 Entstummen</button><button data-action="unblock">🔓 Entblocken</button></div>
   <div id="toast" class="toast" hidden></div>
-
   <script src="./app.js"></script>
-  <script src="./twitch-ui.js"></script>
 </body>
 </html>
