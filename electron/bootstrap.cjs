@@ -9,32 +9,20 @@ const { validateMediaItems, validateMediaFile } = require('../src/core/alerts/me
 
 const OriginalConfigStore = configModule.ConfigStore;
 class TrackedConfigStore extends OriginalConfigStore {
-  constructor(...args) {
-    super(...args);
-    globalThis.__battoConfigStore = this;
-  }
+  constructor(...args) { super(...args); globalThis.__battoConfigStore = this; }
 }
 configModule.ConfigStore = TrackedConfigStore;
 
 const OriginalActionEngine = actionModule.ActionEngine;
 class TrackedActionEngine extends OriginalActionEngine {
-  constructor(options) {
-    super(options);
-    globalThis.__battoActionEngine = this;
-  }
+  constructor(options) { super(options); globalThis.__battoActionEngine = this; }
 }
 actionModule.ActionEngine = TrackedActionEngine;
 
 const OriginalEventCore = eventModule.EventCore;
 class TrackedEventCore extends OriginalEventCore {
-  constructor(options) {
-    super(options);
-    globalThis.__battoEventCore = this;
-  }
-  stop() {
-    if (globalThis.__battoEventCore === this) globalThis.__battoEventCore = null;
-    return super.stop();
-  }
+  constructor(options) { super(options); globalThis.__battoEventCore = this; }
+  stop() { if (globalThis.__battoEventCore === this) globalThis.__battoEventCore = null; return super.stop(); }
 }
 eventModule.EventCore = TrackedEventCore;
 
@@ -88,7 +76,6 @@ class QueuedOverlayServer extends OriginalOverlayServer {
 }
 overlayModule.OverlayServer = QueuedOverlayServer;
 
-// Wrap media import before main21 registers IPC so invalid assets never remain active.
 const nativeHandle = ipcMain.handle.bind(ipcMain);
 ipcMain.handle = (channel, listener) => {
   if (channel !== 'dialog:media') return nativeHandle(channel, listener);
@@ -123,7 +110,6 @@ ipcMain.handle = (channel, listener) => {
 };
 
 require('./main21.cjs');
-ipcMain.handle = nativeHandle;
 
 nativeHandle('automation:cancel', (_event, ruleId) => globalThis.__battoActionEngine?.cancel?.(ruleId) || { ok:false, error:'Action Engine ist noch nicht bereit.' });
 nativeHandle('automation:cancelAll', () => globalThis.__battoActionEngine?.cancelAll?.() || { ok:false, error:'Action Engine ist noch nicht bereit.' });
