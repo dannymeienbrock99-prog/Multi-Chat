@@ -14,10 +14,12 @@ class AxelChatAdapter {
     this.socket = null;
     this.manualStop = false;
     this.reconnectTimer = null;
+    this.capabilities = { readChat: true, sendChat: false, moderation: false, events: false };
     this.status = { name: "axelchat", connected: false, state: "idle", url };
   }
 
-  getStatus() { return { ...this.status }; }
+  getStatus() { return { ...this.status, capabilities: { ...this.capabilities } }; }
+  healthCheck() { const status=this.getStatus(); return Promise.resolve({ ok:Boolean(status.connected), status }); }
 
   updateConfig(config) {
     this.url = config.url || this.url;
@@ -37,10 +39,7 @@ class AxelChatAdapter {
     this.setStatus({ state: "connecting", connected: false, error: null });
 
     try { this.socket = new WebSocket(this.url); }
-    catch (error) {
-      this.setStatus({ state: "error", error: error.message });
-      return this.scheduleReconnect();
-    }
+    catch (error) { this.setStatus({ state: "error", error: error.message }); return this.scheduleReconnect(); }
 
     this.socket.on("open", () => this.setStatus({ state: "connected", connected: true, error: null }));
     this.socket.on("message", (data) => this.handleRaw(data));
