@@ -1,158 +1,24 @@
-const express = require("express");
-const http = require("http");
-const { WebSocketServer } = require("ws");
-
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+const express=require('express');
+const http=require('http');
+const path=require('path');
+const fs=require('fs');
+const {WebSocketServer}=require('ws');
+function esc(v){return String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;')}
+function isLocal(req){const ip=String(req.socket?.remoteAddress||'');return ip==='127.0.0.1'||ip==='::1'||ip==='::ffff:127.0.0.1'}
+class OverlayServer{
+  constructor({host='127.0.0.1',port=8787,chatCore,configStore}){this.host=host;this.port=port;this.chatCore=chatCore;this.configStore=configStore;this.server=null;this.wss=null;this.boundMessage=m=>this.broadcast({type:'chat',data:m});}
+  getStatus(){return{running:Boolean(this.server?.listening),host:this.host,port:this.port}}
+  chatHtml(){const d=this.configStore.get().chatDesign||{};const custom=d.customFontPath&&fs.existsSync(d.customFontPath);const font=custom?'BattoCustom':esc(d.fontFamily||'Segoe UI');return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${custom?`@font-face{font-family:BattoCustom;src:url('/font/custom')}`:''}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}body{font-family:${font},Segoe UI,Arial;color:${esc(d.messageColor||'#fff')}}#chat{position:absolute;left:24px;right:24px;bottom:24px;display:flex;flex-direction:column;gap:10px}.msg{background:rgba(2,12,28,${Math.max(.15,Math.min(1,Number(d.opacity??.92)))});border:1px solid rgba(0,212,255,.32);border-radius:15px;padding:10px 14px;backdrop-filter:blur(12px);box-shadow:0 10px 30px rgba(0,0,0,.22);animation:in .22s ease-out}.user{color:${esc(d.usernameColor||'#00d4ff')};font-weight:900;text-shadow:0 0 ${Number(d.glow||10)}px currentColor}.text{font-size:${Number(d.fontSize||20)}px;line-height:1.35;margin-left:9px}.platform{font-size:11px;text-transform:uppercase;opacity:.72;margin-right:8px}@keyframes in{from{opacity:0;transform:translateY(16px) scale(.98)}to{opacity:1;transform:none}}</style></head><body><div id="chat"></div><script>const chat=document.getElementById('chat');const ws=new WebSocket('ws://'+location.host+'/ws');function add(m){const row=document.createElement('div');row.className='msg';const p=document.createElement('span');p.className='platform';p.textContent=m.platform;const u=document.createElement('span');u.className='user';u.textContent=m.displayName||m.username;const t=document.createElement('span');t.className='text';t.textContent=m.message;row.append(p,u,t);chat.append(row);while(chat.children.length>8)chat.firstElementChild.remove();setTimeout(()=>row.remove(),${Math.max(2,Number(d.displaySeconds||12))*1000})}fetch('/state').then(r=>r.json()).then(s=>(s.messages||[]).slice(-5).forEach(add)).catch(()=>{});ws.onmessage=e=>{try{const x=JSON.parse(e.data);if(x.type==='chat')add(x.data)}catch{}};</script></body></html>`}
+  eventHtml(kind){return `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:Segoe UI;color:#fff}#box{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none}.card{max-width:75%;padding:20px 28px;border-radius:22px;background:rgba(1,13,32,.78);border:1px solid rgba(0,212,255,.38);box-shadow:0 20px 70px rgba(0,0,0,.38),0 0 30px rgba(0,145,255,.18);backdrop-filter:blur(14px);text-align:center;opacity:0;transform:scale(.92);transition:.25s}.card.show{opacity:1;transform:none}.title{font-size:14px;text-transform:uppercase;color:#61dcff}.big{font-size:32px;font-weight:900;margin-top:6px}</style></head><body><div id="box"><div id="card" class="card"><div class="title">${esc(kind)}</div><div id="big" class="big"></div></div></div><script>const card=document.getElementById('card'),big=document.getElementById('big');let t;const ws=new WebSocket('ws://'+location.host+'/ws');ws.onmessage=e=>{try{const x=JSON.parse(e.data);if(x.type!=='event')return;if('${kind}'!=='all'&&x.data?.event!=='${kind}')return;const d=x.data?.data||{};big.textContent=d.nickname||d.uniqueId||d.username||d.text||x.data?.event||'Event';card.classList.add('show');clearTimeout(t);t=setTimeout(()=>card.classList.remove('show'),5000)}catch{}};</script></body></html>`}
+  cohostHtml(format){const cfg=this.configStore.get().cohost||{};const slots=(cfg.slots||[]).slice(0,Math.max(1,Math.min(9,Number(cfg.places||4))));const portrait=format==='tiktok';const count=slots.length;const cols=count<=1?1:count<=4?2:3;const cards=slots.map((s,i)=>{const src=String(s.source||'').trim();const content=/^https?:\/\//i.test(src)?`<iframe src="${esc(src)}" allow="autoplay;camera;microphone" referrerpolicy="no-referrer"></iframe>`:`<div class="placeholder"><div class="avatar">${i+1}</div><strong>${esc(s.label||`Gast ${i+1}`)}</strong><span>${src?esc(src):'Quelle in der App zuweisen'}</span></div>`;return`<section class="guest">${content}</section>`}).join('');return`<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:Segoe UI;color:white}.grid{position:absolute;inset:0;display:grid;grid-template-columns:repeat(${cols},1fr);grid-auto-rows:1fr;gap:${portrait?'12':'18'}px;padding:${portrait?'12':'18'}px}.guest{overflow:hidden;border-radius:20px;background:rgba(3,16,36,.72);border:2px solid rgba(0,212,255,.34);box-shadow:inset 0 0 40px rgba(0,90,180,.1);display:grid;place-items:center}.guest iframe{width:100%;height:100%;border:0}.placeholder{text-align:center;color:#d7efff}.avatar{width:72px;height:72px;border-radius:50%;display:grid;place-items:center;margin:0 auto 12px;background:linear-gradient(145deg,#0b5597,#071a33);border:1px solid #20bfff;font-size:30px;font-weight:900}.placeholder strong{display:block;font-size:24px}.placeholder span{display:block;color:#7ea6c6;margin-top:6px;font-size:13px}</style></head><body><main class="grid">${cards}</main></body></html>`}
+  async start(){if(this.server?.listening)return this.getStatus();const app=express();app.disable('x-powered-by');app.use(express.json({limit:'256kb'}));app.get('/health',(_q,r)=>r.json({ok:true,service:'crazy-batto-multi-chat',port:this.port}));app.get('/state',(_q,r)=>r.json({messages:this.chatCore.getMessages().slice(-100)}));app.get(['/overlay/chat','/overlay/all'],(_q,r)=>r.type('html').send(this.chatHtml()));app.get('/overlay/gifts',(_q,r)=>r.type('html').send(this.eventHtml('gift')));app.get('/overlay/follow',(_q,r)=>r.type('html').send(this.eventHtml('follow')));app.get('/overlay/subs',(_q,r)=>r.type('html').send(this.eventHtml('subscribe')));app.get('/overlay/media',(_q,r)=>r.type('html').send(this.eventHtml('all')));app.get('/cohost/tiktok',(_q,r)=>r.type('html').send(this.cohostHtml('tiktok')));app.get('/cohost/twitch',(_q,r)=>r.type('html').send(this.cohostHtml('twitch')));
+    app.get('/font/custom',(_q,r)=>{const p=this.configStore.get().chatDesign?.customFontPath;if(!p||!fs.existsSync(p))return r.sendStatus(404);r.sendFile(path.resolve(p))});
+    app.post('/api/ingest',(q,r)=>{if(!isLocal(q))return r.status(403).json({ok:false});const body=q.body||{};if(body.type==='chat'||body.message||body.text){const m=this.chatCore.ingest(body.data||body);return r.json({ok:Boolean(m)})}this.emitEvent(body);r.json({ok:true})});
+    this.server=http.createServer(app);this.wss=new WebSocketServer({server:this.server,path:'/ws'});this.wss.on('connection',(ws,req)=>{if(!isLocal(req)){ws.close(1008,'local only');return}ws.send(JSON.stringify({type:'hello',data:{service:'CRAZY_BATTO',port:this.port}}))});
+    const listen=port=>new Promise((resolve,reject)=>{const onError=e=>{this.server.off('listening',onListen);reject(e)},onListen=()=>{this.server.off('error',onError);resolve()};this.server.once('error',onError);this.server.once('listening',onListen);this.server.listen(port,this.host)});let last,requested=this.port;for(let p=requested;p<=Math.min(65535,requested+10);p++){try{this.port=p;await listen(p);last=null;break}catch(e){last=e;if(e.code!=='EADDRINUSE')throw e;this.server=http.createServer(app);this.wss=new WebSocketServer({server:this.server,path:'/ws'})}}if(last)throw last;if(this.port!==requested)this.configStore.merge({http:{port:this.port}});this.chatCore.on('message',this.boundMessage);this.chatCore.log('INFO','OBS',`Overlay-Server: http://${this.host}:${this.port}`);return this.getStatus()}
+  emitEvent(evt){this.broadcast({type:'event',data:evt})}
+  broadcast(payload){if(!this.wss)return;const text=JSON.stringify(payload);for(const c of this.wss.clients)if(c.readyState===1)c.send(text)}
+  async stop(){this.chatCore?.off('message',this.boundMessage);if(this.wss){for(const c of this.wss.clients)c.close();try{this.wss.close()}catch{}this.wss=null}if(!this.server)return;const s=this.server;this.server=null;await new Promise(r=>s.close(()=>r()))}
+  async restart(host,port){await this.stop();this.host=host||'127.0.0.1';this.port=Number(port)||8787;return this.start()}
 }
-
-class OverlayServer {
-  constructor({ host, port, chatCore, configStore }) {
-    this.host = host;
-    this.port = port;
-    this.chatCore = chatCore;
-    this.configStore = configStore;
-    this.server = null;
-    this.wss = null;
-    this.boundMessage = (message) => this.broadcast({ type: "chat", data: message });
-  }
-
-  getStatus() {
-    return { running: Boolean(this.server?.listening), host: this.host, port: this.port };
-  }
-
-  async start() {
-    if (this.server?.listening) return this.getStatus();
-
-    const app = express();
-    app.disable("x-powered-by");
-
-    app.get("/health", (_req, res) => res.json({ ok: true, service: "batto-multi-chat", port: this.port }));
-    app.get("/state", (_req, res) => res.json({ messages: this.chatCore.getMessages().slice(-100) }));
-
-    app.get(["/overlay/chat", "/overlay/all"], (_req, res) => {
-      const design = this.configStore.get().chatDesign;
-      res.type("html").send(`<!doctype html>
-<html lang="de">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Batto Chat Overlay</title>
-<style>
-html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}
-body{font-family:${escapeHtml(design.fontFamily)},Arial,sans-serif;color:${escapeHtml(design.messageColor)}}
-#chat{position:absolute;left:24px;right:24px;bottom:24px;display:flex;flex-direction:column;gap:10px}
-.msg{background:rgba(3,12,24,.66);border:1px solid rgba(96,165,250,.25);border-radius:14px;padding:10px 14px;backdrop-filter:blur(8px);animation:in .28s ease-out}
-.user{color:${escapeHtml(design.usernameColor)};font-weight:800;text-shadow:0 0 ${Number(design.glow||0)}px currentColor}
-.text{font-size:${Number(design.fontSize||20)}px;line-height:1.35;margin-left:8px}
-.platform{font-size:11px;text-transform:uppercase;opacity:.65;margin-right:8px}
-@keyframes in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
-</style>
-</head>
-<body>
-<div id="chat"></div>
-<script>
-const chat=document.getElementById("chat");
-const ws=new WebSocket("ws://"+location.host+"/ws");
-function add(m){
-  const row=document.createElement("div"); row.className="msg";
-  const p=document.createElement("span"); p.className="platform"; p.textContent=m.platform;
-  const u=document.createElement("span"); u.className="user"; u.textContent=m.displayName||m.username;
-  const t=document.createElement("span"); t.className="text"; t.textContent=m.message;
-  row.append(p,u,t); chat.append(row);
-  while(chat.children.length>8) chat.firstElementChild.remove();
-  setTimeout(()=>row.remove(), ${Math.max(2, Number(design.displaySeconds||12)) * 1000});
-}
-fetch("/state").then(r=>r.json()).then(s=>(s.messages||[]).slice(-5).forEach(add)).catch(()=>{});
-ws.onmessage=e=>{try{const x=JSON.parse(e.data); if(x.type==="chat") add(x.data)}catch{}};
-</script>
-</body>
-</html>`);
-    });
-
-    for (const route of ["/overlay/gifts", "/overlay/follow", "/overlay/media", "/cohost/tiktok", "/cohost/twitch"]) {
-      app.get(route, (_req, res) => {
-        res.status(501).type("html").send("<!doctype html><meta charset='utf-8'><body style='background:transparent;color:white;font-family:Segoe UI'>Dieses Overlay ist in dieser Multi-Chat-Ausbaustufe noch nicht aktiv.</body>");
-      });
-    }
-
-    this.server = http.createServer(app);
-    this.wss = new WebSocketServer({ server: this.server, path: "/ws" });
-
-    const listenOn = async (port) => {
-      await new Promise((resolve, reject) => {
-        const onError = (error) => {
-          this.server?.off("listening", onListening);
-          reject(error);
-        };
-        const onListening = () => {
-          this.server?.off("error", onError);
-          resolve();
-        };
-        this.server.once("error", onError);
-        this.server.once("listening", onListening);
-        this.server.listen(port, this.host);
-      });
-    };
-
-    let lastError;
-    const requestedPort = this.port;
-    for (let candidate = requestedPort; candidate <= Math.min(65535, requestedPort + 10); candidate++) {
-      try {
-        this.port = candidate;
-        await listenOn(candidate);
-        lastError = null;
-        break;
-      } catch (error) {
-        lastError = error;
-        if (error.code !== "EADDRINUSE") throw error;
-        this.server = http.createServer(app);
-        this.wss = new WebSocketServer({ server: this.server, path: "/ws" });
-      }
-    }
-    if (lastError) throw lastError;
-
-    if (this.port !== requestedPort) {
-      this.configStore.merge({ http: { port: this.port } });
-      this.chatCore.log("WARN", "OBS", `Port ${requestedPort} belegt; Overlay-Server nutzt ${this.port}.`);
-    }
-
-    this.chatCore.on("message", this.boundMessage);
-    this.chatCore.log("INFO", "OBS", `Overlay-Server läuft auf http://${this.host}:${this.port}`);
-    return this.getStatus();
-  }
-
-  broadcast(payload) {
-    if (!this.wss) return;
-    const text = JSON.stringify(payload);
-    for (const client of this.wss.clients) {
-      if (client.readyState === 1) client.send(text);
-    }
-  }
-
-  async stop() {
-    this.chatCore?.off("message", this.boundMessage);
-    if (this.wss) {
-      for (const client of this.wss.clients) client.close();
-      this.wss.close();
-      this.wss = null;
-    }
-    if (!this.server) return;
-    const server = this.server;
-    this.server = null;
-    await new Promise((resolve) => server.close(() => resolve()));
-  }
-
-  async restart(host, port) {
-    await this.stop();
-    this.host = host || "127.0.0.1";
-    this.port = Number(port) || 8787;
-    return this.start();
-  }
-}
-
-module.exports = { OverlayServer };
+module.exports={OverlayServer};
