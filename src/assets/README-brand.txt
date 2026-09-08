@@ -1,1 +1,0 @@
-CRAZY_BATTO brand asset uses the same source image as the packaged application icon. The UI references brand-logo.jpg; this file is replaced by the icon blob in the final Git tree before release.
