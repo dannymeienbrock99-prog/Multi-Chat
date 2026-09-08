@@ -3,6 +3,23 @@ const crypto = require('crypto');
 const PLATFORMS = new Set(['tiktok','twitch','cng','youtube','local']);
 
 function normalizeMessage(input={}){
+  if(input?.schemaVersion && input?.type==='chat'){
+    const p=String(input.platform||'internal').toLowerCase();
+    return {
+      id: input.eventId || crypto.randomUUID(),
+      platform: PLATFORMS.has(p)?p:'local',
+      userId:String(input.user?.id||input.user?.username||'unknown'),
+      username:String(input.user?.username||'Unknown'),
+      displayName:String(input.user?.displayName||input.user?.username||'Unknown'),
+      message:String(input.message?.text||''),
+      timestamp:input.timestamp||new Date().toISOString(),
+      badges:Array.isArray(input.user?.badges)?input.user.badges:[],
+      moderator:Boolean(input.user?.isModerator),
+      subscriber:Boolean(input.user?.isSubscriber),
+      vip:Boolean(input.user?.isVip),
+      raw:input.meta?.rawData||input
+    };
+  }
   const platform=String(input.platform||'local').toLowerCase();
   return {
     id: input.id || crypto.randomUUID(),
@@ -64,7 +81,7 @@ class ChatCore extends EventEmitter{
       if(filter.action==='block')this.moderate({platform:message.platform,username:message.username,action:'block',reason:`Chat-Filter: ${filter.term}`,resultMode:'local'});
       if((filter.action||'hide')==='hide')return null; message.filterHit=hit;
     }
-    this.messages.push(message); const max=Math.max(100,Number(this.config.multiChat?.maxMessages||5000)); if(this.messages.length>max)this.messages.splice(0,this.messages.length-max); this.emit('message',message); return message;
+    this.messages.push(message); const max=Math.max(50,Math.min(5000,Number(this.config.multiChat?.maxMessages||500))); if(this.messages.length>max)this.messages.splice(0,this.messages.length-max); this.emit('message',message); return message;
   }
 
   moderate(payload={}){
