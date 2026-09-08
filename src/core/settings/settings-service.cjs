@@ -15,7 +15,12 @@ class SettingsService extends EventEmitter {
   getDraft() { return structuredClone(this.draft); }
   isDirty() { return this.dirty; }
 
+  syncIfClean() {
+    if (!this.dirty) this.draft = this.configStore.get();
+  }
+
   patch(patch) {
+    this.syncIfClean();
     const candidate = deepMerge(this.draft, patch || {});
     const validation = validateConfig(candidate);
     this.draft = candidate;
@@ -42,6 +47,7 @@ class SettingsService extends EventEmitter {
   }
 
   resetSection(section) {
+    this.syncIfClean();
     if (!(section in DEFAULT_CONFIG)) return { ok: false, error: 'Unbekannter Bereich.' };
     const candidate = structuredClone(this.draft);
     candidate[section] = structuredClone(DEFAULT_CONFIG[section]);
@@ -53,6 +59,7 @@ class SettingsService extends EventEmitter {
   }
 
   test(section) {
+    this.syncIfClean();
     const validation = validateConfig(this.draft);
     const related = validation.errors.filter((x) => x.path === section || x.path.startsWith(`${section}.`));
     return { ok: related.length === 0, errors: related };
