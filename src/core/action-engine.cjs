@@ -7,9 +7,22 @@ function expand(text, ctx = {}) {
   });
 }
 
-function withTimeout(promise, timeoutMs, label = 'Aktion') {
+function abortError(message = 'Aktion abgebrochen.') {
+  const error = new Error(message);
+  error.code = 'ACTION_CANCELLED';
+  return error;
+}
+
+function withTimeout(promise, timeoutMs, label = 'Aktion', signal) {
   const ms = Math.max(250, Number(timeoutMs || 5000));
   let timer;
+  let abortHandler;
+  const abortPromise = new Promise((_, reject) => {
+    if (!signal) return;
+    if (signal.aborted) return reject(abortError());
+    abortHandler = () => reject(abortError());
+    signal.addEventListener('abort', abortHandler, { once: true });
+  });
   return Promise.race([
     Promise.resolve(promise),
     new Promise((_, reject) => {
@@ -18,8 +31,21 @@ function withTimeout(promise, timeoutMs, label = 'Aktion') {
         err.code = 'ACTION_TIMEOUT';
         reject(err);
       }, ms);
-    })
-  ]).finally(() => clearTimeout(timer));
+    }),
+    abortPromise
+  ]).finally(() => {
+    clearTimeout(timer);
+    if (signal && abortHandler) signal.removeEventListener('abort', abortHandler);
+  });
+}
+
+function cancellableDelay(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(abortError());
+    const timer = setTimeout(resolve, ms);
+    const cancel = () => { clearTimeout(timer); reject(abortError()); };
+    signal?.addEventListener('abort', cancel, { once: true });
+  });
 }
 
 class ActionEngine {
@@ -65,36 +91,19 @@ class ActionEngine {
       const raw = String(message.message || '').trim();
       const match = cmd.caseSensitive ? raw.startsWith(trigger) : raw.toLowerCase().startsWith(trigger.toLowerCase());
       if (!match) continue;
-
       const key = `${message.platform}:${cmd.id || trigger}:${cmd.perUserCooldown === false ? 'global' : message.username}`;
       const now = Date.now();
       const until = this.commandCooldowns.get(key) || 0;
       if (now < until) continue;
       this.commandCooldowns.set(key, now + Math.max(0, Number(cmd.cooldownSeconds || 0)) * 1000);
-
-      await this.executeRule(cmd, {
-        ...message,
-        user: message.displayName || message.username,
-        platform: message.platform,
-        command: trigger,
-        args: raw.slice(trigger.length).trim()
-      }, 'command');
+      await this.executeRule(cmd, { ...message, user: message.displayName || message.username, platform: message.platform, command: trigger, args: raw.slice(trigger.length).trim() }, 'command');
     }
   }
 
   eventType(evt) { return String(evt?.type || evt?.event || '').toLowerCase(); }
   eventData(evt) {
     if (evt?.schemaVersion) {
-      return {
-        ...(evt.user || {}),
-        user: evt.user || {},
-        message: evt.message?.text || '',
-        gift: evt.gift || null,
-        giftName: evt.gift?.name,
-        value: evt.gift?.value,
-        count: evt.gift?.count,
-        moderation: evt.moderation || null
-      };
+      return { ...(evt.user || {}), user: evt.user || {}, message: evt.message?.text || '', gift: evt.gift || null, giftName: evt.gift?.name, value: evt.gift?.value, count: evt.gift?.count, moderation: evt.moderation || null };
     }
     return evt?.data || {};
   }
@@ -107,8 +116,7 @@ class ActionEngine {
     const data = this.eventData(evt);
     const matchText = String(rule.matchText || rule.trigger?.matchText || '').trim().toLowerCase();
     if (matchText) {
-      const haystack = [data.giftName, data.gift?.name, data.name, data.text, data.message, data.nickname, data.uniqueId, data.username, data.user?.username, data.user?.displayName]
-        .filter(Boolean).join(' ').toLowerCase();
+      const haystack = [data.giftName, data.gift?.name, data.name, data.text, data.message, data.nickname, data.uniqueId, data.username, data.user?.username, data.user?.displayName].filter(Boolean).join(' ').toLowerCase();
       if (!haystack.includes(matchText)) return false;
     }
     const minValue = Number(rule.minValue || rule.trigger?.minValue || 0);
@@ -124,13 +132,7 @@ class ActionEngine {
     for (const rule of cfg.events || []) {
       if (!this.eventMatches(rule, evt)) continue;
       const data = this.eventData(evt);
-      await this.executeRule(rule, {
-        ...data,
-        data,
-        event: this.eventType(evt),
-        platform: evt.platform || evt.source || 'internal',
-        rawEvent: evt
-      }, 'event');
+      await this.executeRule(rule, { ...data, data, event: this.eventType(evt), platform: evt.platform || evt.source || 'internal', rawEvent: evt }, 'event');
     }
   }
 
@@ -145,21 +147,39 @@ class ActionEngine {
     if (this.activeRuns.size >= Math.max(1, Number(cfg.rules?.maxConcurrentRuns || 25))) return { ok: false, skipped: 'global-concurrency-limit' };
 
     this.ruleCooldowns.set(id, now + cooldownMs);
-    const run = this.execute(rule.actions || [], ctx, {
+    const controller = new AbortController();
+    const runId = `${id}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+    const promise = this.execute(rule.actions || [], ctx, {
       failurePolicy: rule.failurePolicy || cfg.rules?.defaultFailurePolicy || 'stop-sequence',
       timeoutMs: rule.timeoutMs || cfg.rules?.defaultTimeoutMs || 5000,
-      ruleId: id
+      ruleId: id,
+      runId,
+      signal: controller.signal
     });
-    this.activeRuns.set(id, run);
-    try { return await run; }
-    finally { this.activeRuns.delete(id); }
+    this.activeRuns.set(id, { promise, controller, runId, startedAt: Date.now() });
+    try { return await promise; }
+    finally { if (this.activeRuns.get(id)?.runId === runId) this.activeRuns.delete(id); }
   }
 
-  resolveMedia(mediaId) {
-    const cfg = this.getConfig();
-    return (cfg.media || []).find((item) => item.id === mediaId) || null;
+  cancel(ruleId) {
+    const id = String(ruleId || '');
+    const run = this.activeRuns.get(id);
+    if (!run) return { ok: false, error: 'Keine laufende Multi-Action für diese Regel.' };
+    run.controller.abort();
+    return { ok: true, ruleId: id, runId: run.runId };
   }
 
+  cancelAll() {
+    const ids = [...this.activeRuns.keys()];
+    for (const run of this.activeRuns.values()) run.controller.abort();
+    return { ok: true, cancelled: ids };
+  }
+
+  active() {
+    return [...this.activeRuns.entries()].map(([ruleId, run]) => ({ ruleId, runId: run.runId, startedAt: run.startedAt }));
+  }
+
+  resolveMedia(mediaId) { const cfg = this.getConfig(); return (cfg.media || []).find((item) => item.id === mediaId) || null; }
   resolvePool(poolId) {
     const cfg = this.getConfig();
     const pool = (cfg.mediaPools || []).find((item) => item.id === poolId);
@@ -184,67 +204,60 @@ class ActionEngine {
     const startedAt = Date.now();
     const failurePolicy = options.failurePolicy || 'stop-sequence';
     const timeoutMs = Math.max(250, Number(options.timeoutMs || 5000));
+    const signal = options.signal;
     const results = [];
-    this.onAudit?.({ phase: 'start', ruleId: options.ruleId || null, startedAt: new Date(startedAt).toISOString(), context: { platform: ctx.platform, user: ctx.user || ctx.username } });
+    this.onAudit?.({ phase: 'start', runId: options.runId || null, ruleId: options.ruleId || null, startedAt: new Date(startedAt).toISOString(), context: { platform: ctx.platform, user: ctx.user || ctx.username } });
 
     for (const action of actions) {
+      if (signal?.aborted) {
+        const error = abortError();
+        this.onAudit?.({ phase: 'end', runId: options.runId || null, ruleId: options.ruleId || null, startedAt: new Date(startedAt).toISOString(), durationMs: Date.now() - startedAt, result: 'cancelled', error: error.message });
+        return { ok: false, cancelled: true, error: error.message, results };
+      }
       let attempt = 0;
       let succeeded = false;
       while (!succeeded && attempt < (failurePolicy === 'retry-once' ? 2 : 1)) {
         attempt += 1;
         try {
-          const result = await withTimeout(this.executeOne(action, ctx), action.timeoutMs || timeoutMs, action.type || 'Aktion');
+          const result = await withTimeout(this.executeOne(action, ctx, signal), action.timeoutMs || timeoutMs, action.type || 'Aktion', signal);
           results.push({ ok: true, type: action.type, result });
           succeeded = true;
         } catch (error) {
+          if (error.code === 'ACTION_CANCELLED') {
+            this.onAudit?.({ phase: 'end', runId: options.runId || null, ruleId: options.ruleId || null, startedAt: new Date(startedAt).toISOString(), durationMs: Date.now() - startedAt, result: 'cancelled', error: error.message });
+            return { ok: false, cancelled: true, error: error.message, results };
+          }
           results.push({ ok: false, type: action.type, error: error.message, code: error.code || 'ACTION_FAILED', attempt });
-          this.onLog?.('ERROR', 'Automation', error.message, { action, ctx: { platform: ctx.platform, user: ctx.user || ctx.username }, attempt });
+          this.onLog?.('error', 'Automation', 'ACTION_FAILED', { message: error.message, action, platform: ctx.platform, user: ctx.user || ctx.username, attempt });
           if (attempt < 2 && failurePolicy === 'retry-once') continue;
           if (failurePolicy !== 'continue') {
-            this.onAudit?.({ phase: 'end', ruleId: options.ruleId || null, durationMs: Date.now() - startedAt, result: 'failed', error: error.message });
+            this.onAudit?.({ phase: 'end', runId: options.runId || null, ruleId: options.ruleId || null, startedAt: new Date(startedAt).toISOString(), durationMs: Date.now() - startedAt, result: 'failed', error: error.message });
             return { ok: false, error: error.message, results };
           }
           succeeded = true;
         }
       }
     }
-
-    this.onAudit?.({ phase: 'end', ruleId: options.ruleId || null, durationMs: Date.now() - startedAt, result: 'success' });
+    this.onAudit?.({ phase: 'end', runId: options.runId || null, ruleId: options.ruleId || null, startedAt: new Date(startedAt).toISOString(), durationMs: Date.now() - startedAt, result: 'success' });
     return { ok: true, results };
   }
 
-  async executeOne(action, ctx) {
+  async executeOne(action, ctx, signal) {
+    if (signal?.aborted) throw abortError();
     const type = String(action.type || '').toLowerCase();
     if (type === 'delay') {
       const ms = Math.max(0, Number(action.ms || Number(action.seconds || 0) * 1000));
-      await new Promise((resolve) => setTimeout(resolve, ms));
+      await cancellableDelay(ms, signal);
       return { delayedMs: ms };
     }
-    if (type === 'chat') {
-      const platform = action.platform === 'same' || !action.platform ? ctx.platform : action.platform;
-      return this.sendChat?.(platform, expand(action.text, ctx));
-    }
-    if (type === 'tts') {
-      return this.onTts?.({ text: expand(action.text || ctx.message || '', ctx), voice: action.voice || '', rate: action.rate || 1, pitch: action.pitch || 1, volume: action.volume ?? 1 });
-    }
-    if (type === 'overlay') {
-      return this.onOverlay?.({ type: action.eventType || 'custom', data: { ...ctx, text: expand(action.text || '', ctx) } });
-    }
-    if (type === 'media') {
-      const media = this.resolveMedia(action.mediaId);
-      if (!media) throw new Error('Medium nicht gefunden.');
-      return this.onOverlay?.({ type: 'media', data: { ...ctx, mediaId: media.id, mediaName: media.name, mediaType: media.type, volume: action.volume ?? 1, durationSeconds: action.durationSeconds || 0 } });
-    }
-    if (type === 'mediapool' || type === 'media_pool') {
-      const resolved = this.resolvePool(action.poolId);
-      return this.onOverlay?.({ type: 'media', data: { ...ctx, poolId: resolved.pool.id, mediaId: resolved.media.id, mediaName: resolved.media.name, mediaType: resolved.media.type, volume: action.volume ?? resolved.pool.volume ?? 1, durationSeconds: action.durationSeconds || resolved.pool.durationSeconds || 0 } });
-    }
+    if (type === 'chat') { const platform = action.platform === 'same' || !action.platform ? ctx.platform : action.platform; return this.sendChat?.(platform, expand(action.text, ctx)); }
+    if (type === 'tts') return this.onTts?.({ text: expand(action.text || ctx.message || '', ctx), voice: action.voice || '', rate: action.rate || 1, pitch: action.pitch || 1, volume: action.volume ?? 1 });
+    if (type === 'overlay') return this.onOverlay?.({ type: action.eventType || 'custom', data: { ...ctx, text: expand(action.text || '', ctx) } });
+    if (type === 'media') { const media = this.resolveMedia(action.mediaId); if (!media) throw new Error('Medium nicht gefunden.'); return this.onOverlay?.({ type: 'media', data: { ...ctx, mediaId: media.id, mediaName: media.name, mediaType: media.type, volume: action.volume ?? 1, durationSeconds: action.durationSeconds || 0 } }); }
+    if (type === 'mediapool' || type === 'media_pool') { const resolved = this.resolvePool(action.poolId); return this.onOverlay?.({ type: 'media', data: { ...ctx, poolId: resolved.pool.id, mediaId: resolved.media.id, mediaName: resolved.media.name, mediaType: resolved.media.type, volume: action.volume ?? resolved.pool.volume ?? 1, durationSeconds: action.durationSeconds || resolved.pool.durationSeconds || 0 } }); }
     if (type === 'hotkey') return this.hotkey(action);
     if (type === 'discord') return this.onDiscord?.(expand(action.text || '', ctx));
-    if (type === 'http') {
-      if (!this.onHttp) throw new Error('HTTP-Aktionen sind nicht konfiguriert.');
-      return this.onHttp({ ...action, url: expand(action.url || '', ctx), body: expand(action.body || '', ctx) }, ctx);
-    }
+    if (type === 'http') { if (!this.onHttp) throw new Error('HTTP-Aktionen sind nicht konfiguriert.'); return this.onHttp({ ...action, url: expand(action.url || '', ctx), body: expand(action.body || '', ctx) }, ctx); }
     throw new Error(`Unbekannte Action: ${action.type}`);
   }
 
@@ -258,11 +271,11 @@ class ActionEngine {
     const safeKeys = keys.replace(/'/g, "''");
     const ps = `$p=Get-Process -Name '${safeTarget}' -ErrorAction SilentlyContinue | Select-Object -First 1; if(-not $p){exit 7}; $w=New-Object -ComObject WScript.Shell; if(-not $w.AppActivate($p.Id)){exit 8}; Start-Sleep -Milliseconds 100; $w.SendKeys('${safeKeys}')`;
     return new Promise((resolve, reject) => {
-      const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { windowsHide: true });
+      const child = spawn('powershell.exe', ['-NoProfile','-NonInteractive','-Command',ps], { windowsHide:true });
       child.on('exit', (code) => code === 0 ? resolve() : reject(new Error(`Hotkey fehlgeschlagen (Code ${code})`)));
       child.on('error', reject);
     });
   }
 }
 
-module.exports = { ActionEngine, expand, withTimeout };
+module.exports = { ActionEngine, expand, withTimeout, abortError };
