@@ -1,6 +1,6 @@
 {
   "name": "batto-multi-chat-platform",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "CRAZY_BATTO Multi-Chat Platform for Twitch, TikTok/TikFinity, YouTube, CNG and OBS",
   "main": "electron/main.cjs",
   "author": "Crazy_Batto",
