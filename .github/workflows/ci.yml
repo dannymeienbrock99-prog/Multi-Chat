@@ -1,16 +1,20 @@
 name: CI
-
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
     inputs:
       run_four_hour_soak:
-        description: 'Run 4 hour soak test'
+        description: Run 4 hour soak test
         required: false
         default: false
         type: boolean
-
+permissions:
+  contents: read
+concurrency:
+  group: batto-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   core-acceptance:
     runs-on: ubuntu-latest
@@ -26,6 +30,8 @@ jobs:
         run: npm run smoke
       - name: UI contract
         run: npm run test:ui
+      - name: Settings and secrets storage regression
+        run: npm run test:storage
       - name: Core 2.1 acceptance
         run: npm run test:core
       - name: 500 events per second for 60 seconds
@@ -34,13 +40,10 @@ jobs:
           STRESS_RATE: 500
         run: npm run stress
       - name: Quick soak regression
-        env:
-          SOAK_MINUTES: 1
-        run: node scripts/soak.cjs
-      - name: Upload QA source snapshot
-        uses: actions/upload-artifact@v4
+        run: npm run soak:quick
+      - uses: actions/upload-artifact@v4
         with:
-          name: Batto-OBS-Tool-2.1-QA-Source
+          name: Batto-OBS-Tool-QA-Source
           path: |
             electron/
             src/
@@ -48,7 +51,6 @@ jobs:
             package.json
             README.md
           if-no-files-found: error
-
   windows-installer:
     needs: core-acceptance
     runs-on: windows-latest
@@ -60,37 +62,44 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Syntax and core verification on Windows
-        run: npm run check && npm run smoke && npm run test:core
-      - name: Build Windows installer
+      - name: Verify Windows core, secrets and HTTP runtime
+        run: npm run check && npm run smoke && npm run test:storage && npm run test:core && npm run test:runtime
+      - name: Build installer with decoded image verification
         run: npm run pack:win
-      - name: Install and launch smoke test
-        shell: powershell
+      - name: Install and test real Electron UI and IPC
+        shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $installer = Get-ChildItem 'dist\Batto-OBS-Tool-2.1-Setup-*.exe' | Select-Object -First 1
-          if (-not $installer) { throw 'Windows installer not found.' }
-          Start-Process -FilePath $installer.FullName -ArgumentList '/S' -Wait
-          $searchRoots = @("$env:LOCALAPPDATA\Programs", "$env:ProgramFiles", "$env:ProgramFiles(x86)") | Where-Object { $_ -and (Test-Path $_) }
-          $exe = $null
-          foreach ($root in $searchRoots) {
-            $exe = Get-ChildItem $root -Recurse -Filter 'Batto OBS Tool 2.1.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($exe) { break }
-          }
-          if (-not $exe) { throw 'Installed Batto OBS Tool 2.1 executable not found.' }
-          $process = Start-Process -FilePath $exe.FullName -PassThru
-          Start-Sleep -Seconds 12
-          $process.Refresh()
-          if ($process.HasExited) { throw "Batto OBS Tool exited during startup smoke test with code $($process.ExitCode)." }
-          Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-          Write-Host "Installed and launched successfully: $($exe.FullName)"
-      - name: Upload installer
+          if (-not $installer) { throw 'Installer not found' }
+          $installDir = Join-Path $env:RUNNER_TEMP 'batto-installed'
+          $setup = Start-Process -FilePath $installer.FullName -ArgumentList @('/S', "/D=$installDir") -PassThru -Wait
+          if ($setup.ExitCode -ne 0) { throw "Installer failed: $($setup.ExitCode)" }
+          $exe = Join-Path $installDir 'Batto OBS Tool 2.1.exe'
+          if (-not (Test-Path $exe)) { throw "Installed executable missing: $exe" }
+          $env:BATTO_QA_DIR = Join-Path $env:RUNNER_TEMP 'batto-qa-report'
+          $process = Start-Process -FilePath $exe -ArgumentList '--batto-qa' -PassThru
+          if (-not $process.WaitForExit(90000)) { Stop-Process -Id $process.Id -Force; throw 'Installed app QA timed out' }
+          $report = Join-Path $env:BATTO_QA_DIR 'result.json'
+          if (-not (Test-Path $report)) { throw 'Installed app produced no QA report' }
+          $result = Get-Content $report -Raw | ConvertFrom-Json
+          $result.checks | ForEach-Object { Write-Host "PASS: $_" }
+          if (-not $result.ok -or $process.ExitCode -ne 0) { throw "Installed app QA failed: $($result.error)" }
+      - name: Upload installed-app QA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Batto-Windows-QA-Evidence
+          path: |
+            ${{ runner.temp }}/batto-qa-report/result.json
+            ${{ runner.temp }}/batto-qa-report/dashboard.png
+          if-no-files-found: warn
+      - name: Upload verified Windows installer
         uses: actions/upload-artifact@v4
         with:
           name: Batto-OBS-Tool-2.1-Windows
           path: dist/*.exe
           if-no-files-found: error
-
   soak-4h:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_four_hour_soak }}
     runs-on: ubuntu-latest

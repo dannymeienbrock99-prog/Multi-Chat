@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { atomicWrite } = require('../storage/atomic-file.cjs');
 
 class SecretsService {
   constructor({ userDataPath, safeStorage }) {
@@ -18,13 +19,7 @@ class SecretsService {
     } catch { return {}; }
   }
 
-  writeEnvelope(data) {
-    const tmp = `${this.file}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(data), 'utf8');
-    const fd = fs.openSync(tmp, 'r');
-    try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
-    fs.renameSync(tmp, this.file);
-  }
+  writeEnvelope(data) { atomicWrite(this.file, JSON.stringify(data)); }
 
   available() { return Boolean(this.safeStorage.isEncryptionAvailable?.()); }
 

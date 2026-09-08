@@ -1,16 +1,18 @@
 {
   "name": "batto-obs-tool",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Batto OBS Tool 2.1 – modular local-first Multi-Chat, Event Core, OBS, Overlay and Media platform",
   "main": "electron/bootstrap.cjs",
   "author": "Crazy_Batto",
   "license": "MIT",
   "private": true,
-  "engines": { "node": ">=22 <23" },
+  "engines": {
+    "node": ">=22 <23"
+  },
   "scripts": {
-    "prestart": "node scripts/restore-app.cjs",
+    "prestart": "node scripts/restore-app.cjs && electron scripts/prepare-icons.cjs",
     "start": "electron .",
-    "predev": "node scripts/restore-app.cjs",
+    "predev": "node scripts/restore-app.cjs && electron scripts/prepare-icons.cjs",
     "dev": "electron .",
     "precheck": "node scripts/restore-app.cjs",
     "check": "node scripts/check.cjs",
@@ -21,9 +23,11 @@
     "test:core": "node scripts/core21.cjs",
     "stress": "node scripts/stress.cjs",
     "soak": "node scripts/soak.cjs",
-    "soak:quick": "set SOAK_MINUTES=1&& node scripts/soak.cjs",
-    "prepack:win": "node scripts/restore-app.cjs",
-    "pack:win": "electron-builder --win nsis"
+    "soak:quick": "node -e \"process.env.SOAK_MINUTES='1';require('./scripts/soak.cjs')\"",
+    "prepack:win": "node scripts/restore-app.cjs && electron scripts/prepare-icons.cjs",
+    "pack:win": "electron-builder --win nsis",
+    "test:storage": "node scripts/storage-regression.cjs",
+    "test:runtime": "node scripts/runtime21.cjs"
   },
   "dependencies": {
     "express": "5.1.0",
@@ -38,15 +42,29 @@
     "appId": "de.crazybatto.battoobstool",
     "productName": "Batto OBS Tool 2.1",
     "artifactName": "Batto-OBS-Tool-2.1-Setup-${version}.${ext}",
-    "directories": { "output": "dist" },
-    "files": ["electron/**/*", "src/**/*", "scripts/restore-app.cjs", "package.json", "README.md"],
-    "win": { "target": ["nsis"], "icon": "src/assets/icon.png" },
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "src/**/*",
+      "scripts/**/*",
+      "package.json",
+      "README.md"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "src/assets/icon.png"
+    },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Batto OBS Tool 2.1"
+      "shortcutName": "Batto OBS Tool 2.1",
+      "runAfterFinish": false
     }
   }
 }

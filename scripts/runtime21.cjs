@@ -23,7 +23,7 @@ const { validateMediaFile } = require('../src/core/alerts/media-validator.cjs');
     let portError = null;
     try { await overlay.start(); } catch (error) { portError = error; }
     assert.ok(portError, 'Portkonflikt wurde nicht gemeldet.');
-    assert.equal(portError.code, 'EADDRINUSE');
+    assert.equal(portError.code, 'OVERLAY_PORT_IN_USE');
     assert.equal(overlay.port, 17777);
     assert.equal(configStore.get().http.port, 17777);
     await overlay.stop().catch(() => {});

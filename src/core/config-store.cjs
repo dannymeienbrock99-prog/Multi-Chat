@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { atomicWrite } = require('./storage/atomic-file.cjs');
 const { assertValidConfig, validateConfig } = require('./settings/schema.cjs');
 
 const CURRENT_VERSION = 6;
@@ -174,23 +175,7 @@ class ConfigStore {
   get() { return clone(this.config); }
   validate(candidate) { return validateConfig(candidate); }
 
-  atomicWrite(file,data) {
-    const tmp=`${file}.tmp`;
-    fs.writeFileSync(tmp,data,'utf8');
-    let fd=null;
-    try {
-      // Windows benötigt für FlushFileBuffers ein beschreibbares Handle; ein reines 'r'-Handle kann EPERM liefern.
-      fd=fs.openSync(tmp,process.platform==='win32'?'r+':'r');
-      try { fs.fsyncSync(fd); }
-      catch (error) {
-        // Auf Dateisystemen ohne fsync-Unterstützung bleibt die atomare tmp->rename-Garantie erhalten.
-        if (!['EPERM','EINVAL','ENOSYS','ENOTSUP'].includes(error?.code)) throw error;
-      }
-    } finally {
-      if (fd!==null) { try{fs.closeSync(fd);}catch{} }
-    }
-    fs.renameSync(tmp,file);
-  }
+  atomicWrite(file, data) { atomicWrite(file, data); }
 
   save() {
     assertValidConfig(this.config);
@@ -198,8 +183,16 @@ class ConfigStore {
     this.atomicWrite(this.file,JSON.stringify(this.config,null,2));
   }
 
-  merge(patch) { const candidate=migrateConfig(deepMerge(this.config,patch||{})); assertValidConfig(candidate); this.config=candidate; this.save(); return this.get(); }
-  resetSection(section) { if(!(section in DEFAULT_CONFIG))throw new Error('Unbekannter Bereich'); const candidate=clone(this.config); candidate[section]=clone(DEFAULT_CONFIG[section]); assertValidConfig(candidate); this.config=candidate; this.save(); return this.get(); }
+  commit(candidate) {
+    assertValidConfig(candidate);
+    const previous = this.config;
+    this.config = candidate;
+    try { this.save(); } catch (error) { this.config = previous; throw error; }
+    return this.get();
+  }
+
+  merge(patch) { const candidate=migrateConfig(deepMerge(this.config,patch||{})); return this.commit(candidate); }
+  resetSection(section) { if(!(section in DEFAULT_CONFIG))throw new Error('Unbekannter Bereich'); const candidate=clone(this.config); candidate[section]=clone(DEFAULT_CONFIG[section]); return this.commit(candidate); }
 
   backupNow() {
     const stamp=new Date().toISOString().replace(/[:.]/g,'-'); const file=path.join(this.backupDir,`settings-${stamp}.json`); this.atomicWrite(file,JSON.stringify(this.config,null,2));
@@ -207,9 +200,9 @@ class ConfigStore {
   }
   listBackupsRaw() { if(!fs.existsSync(this.backupDir))return[]; return fs.readdirSync(this.backupDir).filter(name=>/^(settings|config)-.*\.json$/i.test(name)).map(name=>{const p=path.join(this.backupDir,name);return{name,path:p,mtime:fs.statSync(p).mtimeMs}}).sort((a,b)=>b.mtime-a.mtime); }
   listBackups() { return this.listBackupsRaw().slice(0,Math.max(1,Number(this.config.backup?.keep||5))); }
-  restoreBackup(filePath) { const candidate=migrateConfig(this.readJson(filePath)); assertValidConfig(candidate); this.config=candidate; this.save(); return this.get(); }
+  restoreBackup(filePath) { const candidate=migrateConfig(this.readJson(filePath)); return this.commit(candidate); }
   exportTo(filePath) { this.atomicWrite(filePath,JSON.stringify(this.config,null,2)); }
-  importFrom(filePath) { const candidate=migrateConfig(this.readJson(filePath)); assertValidConfig(candidate); this.config=candidate; this.save(); return this.get(); }
+  importFrom(filePath) { const candidate=migrateConfig(this.readJson(filePath)); return this.commit(candidate); }
 }
 
 module.exports={ConfigStore,DEFAULT_CONFIG,CURRENT_VERSION,CURRENT_SCHEMA_VERSION,deepMerge,migrateConfig,migrateSchema1To2,migrateSchema2To3,stripUnknown};
