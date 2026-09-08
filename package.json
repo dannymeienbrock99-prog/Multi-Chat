@@ -7,10 +7,15 @@
   "license": "MIT",
   "private": true,
   "scripts": {
+    "prestart": "node scripts/restore-app.cjs",
     "start": "electron .",
+    "predev": "node scripts/restore-app.cjs",
     "dev": "electron .",
+    "precheck": "node scripts/restore-app.cjs",
     "check": "node scripts/check.cjs",
+    "presmoke": "node scripts/restore-app.cjs",
     "smoke": "node scripts/smoke.cjs",
+    "prepack:win": "node scripts/restore-app.cjs",
     "pack:win": "electron-builder --win nsis"
   },
   "dependencies": {
