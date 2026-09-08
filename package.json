@@ -6,6 +6,7 @@
   "author": "Crazy_Batto",
   "license": "MIT",
   "private": true,
+  "engines": { "node": ">=22 <23" },
   "scripts": {
     "prestart": "node scripts/restore-app.cjs",
     "start": "electron .",
@@ -25,13 +26,13 @@
     "pack:win": "electron-builder --win nsis"
   },
   "dependencies": {
-    "express": "^5.1.0",
-    "obs-websocket-js": "^5.0.6",
-    "ws": "^8.18.3"
+    "express": "5.1.0",
+    "obs-websocket-js": "5.0.6",
+    "ws": "8.18.3"
   },
   "devDependencies": {
-    "electron": "^38.0.0",
-    "electron-builder": "^26.0.12"
+    "electron": "38.8.6",
+    "electron-builder": "26.0.12"
   },
   "build": {
     "appId": "de.crazybatto.battoobstool",
