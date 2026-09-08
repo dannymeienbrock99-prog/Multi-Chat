@@ -48,6 +48,9 @@ contextBridge.exposeInMainWorld('batto', {
   importMedia: () => ipcRenderer.invoke('dialog:media'),
   removeMedia: (id) => ipcRenderer.invoke('media:remove', id),
   testAutomationAction: (action) => ipcRenderer.invoke('automation:testAction', action),
+  cancelAutomation: (ruleId) => ipcRenderer.invoke('automation:cancel', ruleId),
+  cancelAllAutomations: () => ipcRenderer.invoke('automation:cancelAll'),
+  activeAutomations: () => ipcRenderer.invoke('automation:active'),
   testBroadcast: () => ipcRenderer.invoke('broadcast:test'),
 
   openOverlay: (route) => ipcRenderer.invoke('overlay:open', route),
