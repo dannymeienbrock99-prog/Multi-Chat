@@ -1,0 +1,112 @@
+:root {
+  color-scheme:dark;
+  --bg:#0b0b0c;--panel:#131212;--panel2:#1a1815;--text:#f5eddf;--muted:#b9aa91;
+  --line:rgba(191,146,65,.43);--gold:#e6bd70;--gold-light:#ffe2a3;--cyan:#e7bd72;
+  --blue:#be8736;--accent:#dfad55;--shadow:0 10px 34px rgba(0,0,0,.38);
+  --program-background:url('../assets/marble.jpg');
+}
+body {background:#0c0c0d;color:var(--text)}
+.bg-watermark {background-image:linear-gradient(rgba(8,8,9,.85),rgba(8,8,9,.92)),var(--program-background)!important;background-size:auto,630px 600px!important;opacity:1!important;filter:none!important}
+.topbar,.sidebar,.statusbar {background:linear-gradient(115deg,rgba(11,11,12,.98),rgba(28,24,19,.97));border-color:var(--line);box-shadow:inset 0 1px rgba(255,229,180,.08)}
+.brand-title {color:#f3d396;text-shadow:0 1px 10px rgba(184,123,35,.25)}
+.brand-title span,.brand-sub,.sidebar-brand span {color:var(--muted)}
+.brand-logo {object-fit:contain!important;background:#090909;border-color:var(--line)}
+.sidebar-brand img {object-fit:contain!important;background:#090909;border-color:var(--line)}
+.card,.module-card,.panel-section {background:linear-gradient(125deg,rgba(19,18,17,.97),rgba(11,11,13,.98));border-color:var(--line);box-shadow:var(--shadow)}
+.card-head,.section-line,.table-scroll,.history-wrap,.mod-title,.co-output,.url-row {border-color:rgba(200,160,90,.23)}
+h1,h2,h3,h4 {color:#f0d6a1}
+p,label,.field,.composer-hint {color:var(--muted)}
+button,.icon-btn {color:#e8d4af;border-color:rgba(190,147,75,.55);background:linear-gradient(#29251e,#141312);box-shadow:inset 0 1px rgba(255,231,186,.06)}
+button:hover,.icon-btn:hover {color:#fff2d3;background:#393020;border-color:#e8bd73}
+button.primary,.primary,.nav-item.active,.tabs button.active,.segmented button.active {background:linear-gradient(120deg,#805b24,#c99c50);color:#100e0a;border-color:#edcb87;box-shadow:0 0 10px rgba(196,144,61,.14);text-shadow:none}
+button.soft {background:#211d17;color:#edd5aa}
+button.danger {color:#ffa7a0;border-color:#ac6258;background:#302020}
+button:disabled {opacity:.45;cursor:not-allowed}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible {outline:2px solid #f5cb83;outline-offset:2px}
+input:not([type=checkbox]):not([type=range]):not([type=color]),select,textarea {background:#0b0c0e;color:#f5ede1;border-color:rgba(190,148,82,.47)}
+input::placeholder,textarea::placeholder {color:#8c8272}
+input[type=checkbox],input[type=range] {accent-color:#d9ad62}
+input[type=range] {cursor:pointer}
+.nav-item {background:transparent;color:#d5c3a2;box-shadow:none}
+.nav-item b {color:#deb773}
+.nav-item.active b {color:#120f0b}
+.nav-item:hover {background:#32291b;color:#ffe1a3}
+.tabs button,.segmented button {background:#161513;color:#cabc9e;border-color:var(--line)}
+.chip,.live-pill {background:#171715;border-color:var(--line);color:#ddcaa3}
+.chip.ok,.live-pill {color:#9dd4ab;background:#132219;border-color:#47634d}
+.chip.warn {background:#312616;color:#f1c27a}
+.chip.error {background:#35201c;color:#ffa397}
+.chat-list,.chat-row,.mod-box,.mod-entry,.co-preview,.connections,.connection,.history-wrap {background-color:transparent;color:var(--text)}
+.chat-row {border-color:rgba(170,134,78,.14)}
+.chat-time {color:#ae9d83}
+.chat-text {color:#f0eae0}
+.mod-title,.mod-box {background:rgba(18,17,15,.75);border-color:rgba(190,148,82,.30)}
+th {color:#d9bc83;background:#211c16}
+td {color:#e4d9c5;border-color:rgba(170,134,78,.18)}
+code,.url-row code,.co-output code {color:#e4bb74;overflow-wrap:anywhere}
+.context-menu,#modal,.modal-content,.confirm-dialog {background:#151413;color:#f6e8cf;border:1px solid #bd9856;box-shadow:0 18px 60px #0009}
+.context-menu button {background:transparent;border:0;color:#f3dfb8}
+.context-menu button:hover {background:#3d2e19}
+.empty small,.empty b {color:var(--muted)}
+#toast {background:#242016;color:#fae4b5;border-color:#bb8a47}
+#toast.error {background:#331b19;color:#ffd2ca;border-color:#a9564d}
+.start-view.active {height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#09090b;border:1px solid var(--line);border-radius:12px}
+.start-art {display:block;width:100%;height:100%;max-height:100%;object-fit:contain;object-position:center;border-radius:10px}
+.family-logos {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;max-width:780px;margin:16px auto 0}
+.family-logos figure {margin:0;min-width:0;text-align:center}
+.family-logos img {display:block;width:100%;height:auto;max-height:320px;object-fit:contain;background:#000;border-radius:14px}
+.family-logos figcaption {padding-top:12px;color:#e7c582;font-size:14px}
+.detached .chat-card {background-image:linear-gradient(90deg,rgba(8,8,10,.9),rgba(8,8,10,.70)),url('../assets/rose.jpg');background-size:auto,contain;background-repeat:no-repeat;background-position:center,right center}
+.detached .topbar {border-bottom:1px solid #9e7a40}
+.detached .chat-list {background:transparent}
+.detached .chat-row {background:rgba(7,7,8,.58);border-radius:6px}
+.detached .composer {background:rgba(12,11,11,.94)}
+.detached .app {min-width:0}
+.detached .brand-title {font-size:16px}
+.detached .brand-title span,.detached .top-status .chip {display:none}
+.detached .brand-sub {font-size:11px}
+.detached .statusbar .metrics {display:none}
+/* Preserve the original dashboard's rows and column positions; allow its tracks to fit the existing window. */
+@media(min-width:1301px){.dashboard-grid{grid-template-columns:minmax(0,1.08fr) minmax(0,1.08fr) minmax(220px,.60fr)}}
+.card,.content,.module-card,.form-grid>div,.form-grid>label {min-width:0}
+.bc-master {margin-bottom:18px}
+.bc-master .form-grid {align-items:end}
+.bc-master h3,.bc-master p {margin:0 0 6px}
+.bc-layout {display:grid;grid-template-columns:260px minmax(0,1fr);gap:18px;align-items:start}
+.bc-sidebar {min-width:0}
+#bcList {display:flex;flex-direction:column;gap:9px;margin-top:12px}
+.bc-list-item {display:flex;flex-direction:column;text-align:left;gap:6px;padding:13px;white-space:normal;width:100%}
+.bc-list-item.selected {border-color:#efc977;background:linear-gradient(120deg,#3b2d19,#201b14)}
+.bc-item-name {display:flex;align-items:center;gap:8px;font-weight:700}
+.bc-list-item small {color:#bda884;overflow-wrap:anywhere}
+.bc-dot {width:7px;height:7px;border-radius:50%;background:#726d65;flex:none}
+.bc-dot.enabled {background:#88ce98}
+.bc-editor h2 {margin:0;font-size:20px}
+.bc-editor h3 {font-size:14px;margin:18px 0 10px}
+.bc-editor .field,.bc-master .field {display:flex;flex-direction:column;gap:7px;font-size:12px;margin:0}
+.bc-editor .form-grid {margin-top:16px;align-items:start}
+.bc-activation {padding-top:28px}
+.bc-targets {display:flex;flex-wrap:wrap;gap:12px 18px}
+.bc-message-row {display:grid;grid-template-columns:22px minmax(0,1fr) 34px;gap:8px;align-items:start;margin-bottom:9px}
+.bc-message-row>span {color:#ba9f70;padding-top:9px;font-size:12px}
+.bc-message-row textarea {width:100%;min-height:60px;resize:vertical;line-height:1.5}
+.bc-advanced {margin-top:18px;border-top:1px solid var(--line);padding-top:14px}
+.bc-advanced summary {cursor:pointer;color:#dfc291;font-weight:600}
+.bc-save {margin-top:20px;flex-wrap:wrap}
+#bcDraftState {font-size:11px;color:#c4aa7c}
+.bc-empty {padding:45px 20px;text-align:center}
+.confirm-dialog {max-width:460px;padding:26px;border-radius:12px}
+.confirm-dialog::backdrop {background:#000b}
+.confirm-dialog h2 {margin-top:0}
+@media(max-width:1200px){.bc-layout{grid-template-columns:220px minmax(0,1fr)}.bc-editor .form-grid.three{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+
+.table-scroll th {background:#2a2218;color:#e4c68c}
+.table-scroll td {border-color:rgba(184,143,73,.2)}
+.connection-item,.co-preview>div,.media-check,.url-row code,.co-output code {background:#11110f;border-color:rgba(180,140,70,.3)}
+.connection-item .ico {background:#382d1c;color:#eccd91}
+.connection-item small {color:#baa786}
+.info-card {background:linear-gradient(110deg,#352715,#171512);border-color:#96713c;color:#eed8af}
+.module-head p,.url-row span {color:#b9a685}
+.bc-save {position:sticky;bottom:0;z-index:2;background:#181612;padding:12px 0;border-top:1px solid var(--line)}
+.live-pill.offline {background:#191817;color:#bca988;border-color:#716042}
