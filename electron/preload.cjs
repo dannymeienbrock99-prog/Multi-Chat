@@ -48,6 +48,8 @@ contextBridge.exposeInMainWorld('batto', {
   importMedia: () => ipcRenderer.invoke('dialog:media'),
   importChatBackground: () => ipcRenderer.invoke('dialog:chatBackground'),
   resetChatBackground: () => ipcRenderer.invoke('chat-background:reset'),
+  importLocalChatIcon: () => ipcRenderer.invoke('dialog:localChatIcon'),
+  resetLocalChatIcon: () => ipcRenderer.invoke('local-chat-icon:reset'),
   removeMedia: (id) => ipcRenderer.invoke('media:remove', id),
   testAutomationSequence: payload=>ipcRenderer.invoke('automation:testSequence',payload),
   testAutomationAction: (action) => ipcRenderer.invoke('automation:testAction', action),
@@ -95,6 +97,7 @@ contextBridge.exposeInMainWorld('batto', {
   onTtsSpeak: (cb) => on('tts:speak', cb),
   onConfigChanged: (cb) => on('config:changed', cb),
   onChatBackgroundChanged: (cb) => on('chat-background:changed', cb),
+  onLocalChatIconChanged: (cb) => on('local-chat-icon:changed', cb),
   onHealthStatus: (cb) => on('health:status', cb),
   onFfmpegStatus: (cb) => on('ffmpeg:status', cb),
   onDatabaseStatus: (cb) => on('database:status', cb)

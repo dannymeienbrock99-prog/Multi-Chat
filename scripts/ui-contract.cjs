@@ -35,6 +35,9 @@ const checks = [
   ,['Chatfenster-Bild-Upload', /stChatImageUpload|Eigenes Bild hochladen/]
   ,['Chatbild dauerhaft gespeichert', /dialog:chatBackground|chat-background:reset/]
   ,['Chatbild Vorschau und Anpassung', /chatBackgroundPreview|stChatImageFit|stChatImageDarkness/]
+  ,['Lokaler Chat-Icon-Upload', /stLocalIconUpload|dialog:localChatIcon/]
+  ,['Lokales Icon automatisch 128 × 128', /LOCAL_CHAT_ICON_SIZE|128 × 128/]
+  ,['Lokales Icon im OBS-Overlay', /assets\/custom\/local-chat-icon\.png/]
 ];
 const combined = `${app}\n${html}\n${css}\n${v21}\n${main}\n${preload}`;
 const failed = checks.filter(([,regex]) => !regex.test(combined)).map(([name]) => name);

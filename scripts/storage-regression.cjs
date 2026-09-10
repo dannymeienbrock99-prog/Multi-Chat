@@ -7,6 +7,7 @@ const { atomicWrite } = require('../src/core/storage/atomic-file.cjs');
 const { ConfigStore } = require('../src/core/config-store.cjs');
 const { SecretsService } = require('../src/core/settings/secrets-service.cjs');
 const { validateChatBackgroundFile, isPathInside } = require('../src/core/media/chat-background.cjs');
+const { LOCAL_CHAT_ICON_SIZE, validateLocalChatIconSource } = require('../src/core/media/local-chat-icon.cjs');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'batto-storage-'));
 try {
   const store = new ConfigStore(dir);
@@ -24,6 +25,13 @@ try {
   assert.equal(persistedChatImage.customName,'QA Chat.jpg');
   assert.equal(persistedChatImage.fit,'cover');
   assert.equal(persistedChatImage.showInMain,true);
+  const localIconSource=path.join(__dirname,'..','src','assets','icon.png');
+  assert.equal(validateLocalChatIconSource(localIconSource).ok,true);
+  assert.equal(LOCAL_CHAT_ICON_SIZE,128);
+  store.merge({appearance:{chatIcons:{local:{mode:'custom',customPath:localIconSource,customName:'QA Local.png'}}}});
+  const persistedLocalIcon=new ConfigStore(dir).get().appearance.chatIcons.local;
+  assert.equal(persistedLocalIcon.mode,'custom');
+  assert.equal(persistedLocalIcon.customName,'QA Local.png');
   const file = path.join(dir, 'atomic.json');
   atomicWrite(file, 'original');
   const originalFsync = fs.fsyncSync;

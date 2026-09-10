@@ -1,6 +1,6 @@
 const OVERLAY_CLIENT = `function connectBatto(){
  const proxy={onmessage:null,send:value=>{if(socket?.readyState===1)socket.send(value);}};let socket,attempt=0,closed=false;
- function open(){if(closed)return;socket=new WebSocket('ws://'+location.host+'/ws');socket.onopen=()=>{attempt=0;};socket.onmessage=e=>{try{const x=JSON.parse(e.data);if(x.type==='config'){const route=location.pathname,sections=x.sections||[];if((route.includes('/cohost/')&&sections.includes('cohost'))||(route.includes('/chat')&&sections.includes('chatDesign')))location.reload();}else proxy.onmessage?.(e);}catch{}};socket.onclose=()=>{if(!closed)setTimeout(open,[1000,2000,5000,10000,30000][Math.min(attempt++,4)]);};socket.onerror=()=>socket.close();}
+ function open(){if(closed)return;socket=new WebSocket('ws://'+location.host+'/ws');socket.onopen=()=>{attempt=0;};socket.onmessage=e=>{try{const x=JSON.parse(e.data);if(x.type==='config'){const route=location.pathname,sections=x.sections||[];if((route.includes('/cohost/')&&sections.includes('cohost'))||(route.includes('/chat')&&(sections.includes('chatDesign')||sections.includes('appearance'))))location.reload();}else proxy.onmessage?.(e);}catch{}};socket.onclose=()=>{if(!closed)setTimeout(open,[1000,2000,5000,10000,30000][Math.min(attempt++,4)]);};socket.onerror=()=>socket.close();}
  window.addEventListener('beforeunload',()=>{closed=true;socket?.close();});open();return proxy;
 }`;
 const express = require('express');
@@ -9,6 +9,7 @@ const path = require('path');
 const fs = require('fs');
 const { WebSocketServer } = require('ws');
 const { isTikFinityWidgetUrl } = require('./settings/schema.cjs');
+const { validateChatBackgroundFile, isPathInside } = require('./media/chat-background.cjs');
 
 const PLATFORM_LOGO_DIR = path.join(__dirname, '..', 'assets', 'platforms');
 const PLATFORM_LOGOS = new Set(['tiktok.svg', 'twitch.svg', 'youtube.svg']);
@@ -66,10 +67,18 @@ class OverlayServer {
     return widgets.find((widget) => widget?.enabled === true && widget.id === id && isTikFinityWidgetUrl(widget.url)) || null;
   }
 
+  getLocalChatIconPath() {
+    const selected = this.configStore.get().appearance?.chatIcons?.local || {};
+    if (selected.mode !== 'custom' || !isPathInside(selected.customPath, this.configStore.imageDir)) return '';
+    const validation = validateChatBackgroundFile(selected.customPath);
+    return validation.ok && validation.ext === '.png' ? validation.path : '';
+  }
+
   chatHtml() {
     const design = this.configStore.get().chatDesign || {};
     const custom = design.customFontPath && fs.existsSync(design.customFontPath);
     const font = custom ? 'BattoCustom' : esc(design.fontFamily || 'Segoe UI');
+    const localChatIcon = this.getLocalChatIconPath() ? '/assets/custom/local-chat-icon.png' : '';
     return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
 ${custom ? `@font-face{font-family:BattoCustom;src:url('/font/custom')}` : ''}
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}
@@ -80,7 +89,7 @@ body{font-family:${font},Segoe UI,Arial;color:${esc(design.messageColor || '#fff
 .text{font-size:${Number(design.fontSize || 20)}px;line-height:1.35}.platform{width:23px;height:23px;display:inline-grid;place-items:center;flex:0 0 23px}.platform img{display:block;width:22px;height:22px;object-fit:contain}.platform.internal{border-radius:6px;background:rgba(255,255,255,.12);font-size:13px}
 @keyframes in{from{opacity:0;transform:translateY(16px) scale(.98)}to{opacity:1;transform:none}}
 </style><script src="/overlay-client.js"></script></head><body><div id="chat"></div><script>
-const chat=document.getElementById('chat');const ws=connectBatto();const platformLogos={tiktok:'/assets/platforms/tiktok.svg',twitch:'/assets/platforms/twitch.svg',youtube:'/assets/platforms/youtube.svg',cng:'https://cng-plattform.com/manus-storage/favicon_e3fccd67.png'};const platformNames={tiktok:'TikTok',twitch:'Twitch',youtube:'YouTube',cng:'CNG',internal:'Lokal'};
+const chat=document.getElementById('chat');const ws=connectBatto();const platformLogos={tiktok:'/assets/platforms/tiktok.svg',twitch:'/assets/platforms/twitch.svg',youtube:'/assets/platforms/youtube.svg',cng:'https://cng-plattform.com/manus-storage/favicon_e3fccd67.png',internal:${JSON.stringify(localChatIcon)}};const platformNames={tiktok:'TikTok',twitch:'Twitch',youtube:'YouTube',cng:'CNG',internal:'Lokaler Chat / Overlay'};
 function add(m){const key=platformLogos[m.platform]?m.platform:'internal';const row=document.createElement('div');row.className='msg';const p=document.createElement('span');p.className='platform '+key;p.title=platformNames[key];p.setAttribute('aria-label',platformNames[key]);if(platformLogos[key]){const logo=document.createElement('img');logo.src=platformLogos[key];logo.alt=platformNames[key];p.append(logo)}else p.textContent='•';const u=document.createElement('span');u.className='user';u.textContent=m.displayName||m.username;const t=document.createElement('span');t.className='text';t.textContent=m.message;row.append(p,u,t);chat.append(row);while(chat.children.length>8)chat.firstElementChild.remove();setTimeout(()=>row.remove(),${Math.max(2, Number(design.displaySeconds || 12)) * 1000})}
 fetch('/state').then(r=>r.json()).then(s=>(s.messages||[]).slice(-5).forEach(add)).catch(()=>{});ws.onmessage=e=>{try{const x=JSON.parse(e.data);if(x.type==='chat')add(x.data)}catch{}};
 </script></body></html>`;
@@ -135,6 +144,11 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent
       const name=String(req.params.name || '').toLowerCase();
       if (!PLATFORM_LOGOS.has(name)) return res.sendStatus(404);
       return res.type('image/svg+xml').sendFile(path.join(PLATFORM_LOGO_DIR, name));
+    });
+    app.get('/assets/custom/local-chat-icon.png', (_req, res) => {
+      const iconPath=this.getLocalChatIconPath();
+      if (!iconPath) return res.sendStatus(404);
+      return res.type('image/png').sendFile(iconPath);
     });
 
     app.get('/health', (_req, res) => res.json({ ok: true, service: 'batto-obs-tool-2.1', ...this.getStatus() }));
