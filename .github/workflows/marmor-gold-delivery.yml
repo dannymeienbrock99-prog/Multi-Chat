@@ -1,3 +1,4 @@
+# CRAZY_BATTO 2.1.2 delivery trigger 2026-09-10
 name: Marmor Gold Delivery
 
 on:
@@ -241,7 +242,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $tag = 'marmor-gold-20260909'
+          $tag = 'marmor-gold-20260910'
           gh release view $tag --json tagName 2>$null
           if ($LASTEXITCODE -eq 0) { throw 'Delivery release already exists; refusing to overwrite it.' }
           gh release create $tag 'dist/Batto-MarmorGold-Windows-Setup.exe' 'dist/Batto-MarmorGold-Windows.zip' 'dist/Batto-MarmorGold-QA.zip' 'dist/SHA256SUMS.txt' --target $env:DELIVERY_COMMIT --prerelease --title 'Batto OBS Tool - Marmor/Gold Windows' --notes 'Windows installer with original artwork, Start view and prepared broadcast changes. Installation, packaged application, storage/runtime tests and real-window screenshots were checked by this delivery run. This is a development build: live platform-account acceptance, real OBS-device acceptance and the full four-hour soak are not certified by this release. Main remains unchanged.'
