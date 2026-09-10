@@ -1,0 +1,120 @@
+name: Integrate 2.1.2 Runtime
+
+on:
+  push:
+    branches: [build/batto-obs-tool-2.1-core]
+    paths: [.github/workflows/integrate-212-runtime.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Patch config schema, scheduler runtime, preload and UI shell
+        shell: bash
+        run: |
+          node <<'JS'
+          const fs=require('fs');
+          function edit(file,fn){const before=fs.readFileSync(file,'utf8');const after=fn(before);if(after===before)throw new Error(`No changes applied to ${file}`);fs.writeFileSync(file,after);}
+          function must(s,a,b,label){if(!s.includes(a))throw new Error(`Missing patch target ${label}`);return s.replace(a,b)}
+
+          edit('src/core/config-store.cjs',s=>{
+            s=must(s,'const CURRENT_SCHEMA_VERSION = 3;','const CURRENT_SCHEMA_VERSION = 4;','schema version');
+            s=must(s,"general: { displayName:'Crazy_Batto', language:'de', autoSave:false, startMinimized:false, startView:'multichat', minimizeToTray:false, updateBehavior:'manual' },","general: { displayName:'Crazy_Batto', language:'de', autoSave:false, startMinimized:false, startView:'start', minimizeToTray:false, updateBehavior:'manual' },",'start view');
+            s=must(s,"autoBroadcast: { enabled:false, intervalSeconds:600, startDelaySeconds:30, mode:'sequence', targets:['cng'], messages:[], localCngOverlay:true },","autoBroadcast: { enabled:false, globalMinGapSeconds:3, platformMinGapSeconds:5, localCngOverlay:true, items:[] },",'broadcast defaults');
+            const old=`function migrateSchema2To3(input) {
+  const cfg = clone(input || {});
+  cfg.schemaVersion = 3;
+  cfg.http = { allowLan:false, maxWsClients:20, ...(cfg.http || {}) };
+  cfg.obs = { reconnect:true, requestTimeoutMs:5000, ...(cfg.obs || {}) };
+  cfg.rules = { maxConcurrentRuns:25, defaultTimeoutMs:5000, defaultFailurePolicy:'stop-sequence', httpAllowlist:[], ...(cfg.rules || {}) };
+  cfg.eventCore = { dedupeTtlMs:120000, dedupeMaxEntries:10000, maxQueue:5000, aggregateLikes:true, aggregateGifts:true, ...(cfg.eventCore || {}) };
+  cfg.alerts = { enabled:true, maxQueue:100, defaultDurationMs:5000, queueMode:'priority', mergeGiftWindowMs:1500, masterVolume:1, items:[], ...(cfg.alerts || {}) };
+  return cfg;
+}
+`;
+            const plus=old+`
+function migrateSchema3To4(input) {
+  const cfg = clone(input || {});
+  cfg.schemaVersion = 4;
+  cfg.general = { ...(cfg.general || {}) };
+  if (!cfg.general.startView || cfg.general.startView === 'multichat') cfg.general.startView = 'start';
+  const old = cfg.autoBroadcast && typeof cfg.autoBroadcast === 'object' ? cfg.autoBroadcast : {};
+  let items = Array.isArray(old.items) ? clone(old.items) : [];
+  const legacyMessages = Array.isArray(old.messages) ? old.messages.map(String).map(x => x.trim()).filter(Boolean) : [];
+  if (!items.length && legacyMessages.length) items = [{id:'legacy-broadcast',name:'Übernommener Auto-Broadcast',enabled:old.enabled===true,targets:Array.isArray(old.targets)&&old.targets.length?[...old.targets]:['cng'],messages:legacyMessages,intervalSeconds:Number(old.intervalSeconds||600),intervalMode:'fixed',minIntervalSeconds:300,maxIntervalSeconds:900,startDelaySeconds:Number(old.startDelaySeconds||30),mode:old.mode==='random'?'random':'sequence',avoidRepeat:true,onlyWhenLive:Boolean(old.onlyWhenLive),onlyWhenChatActive:Boolean(old.onlyWhenChatActive),activityWindowSeconds:Number(old.activityWindowSeconds||300),minChatMessages:Number(old.minChatMessages||1),retryOnError:Boolean(old.retryOnError),retryDelaySeconds:Number(old.retryDelaySeconds||30)}];
+  cfg.autoBroadcast = {enabled:old.enabled===true,globalMinGapSeconds:Number(old.globalMinGapSeconds??3),platformMinGapSeconds:Number(old.platformMinGapSeconds??5),localCngOverlay:old.localCngOverlay!==false,items};
+  return cfg;
+}
+`;
+            s=must(s,old,plus,'schema3to4 migration');
+            s=must(s,"else if (schema === 2) source = migrateSchema2To3(source);","else if (schema === 2) source = migrateSchema2To3(source);\n    else if (schema === 3) source = migrateSchema3To4(source);",'migration loop');
+            s=must(s,'migrateSchema1To2,migrateSchema2To3,stripUnknown','migrateSchema1To2,migrateSchema2To3,migrateSchema3To4,stripUnknown','migration export');
+            return s;
+          });
+
+          edit('src/core/settings/schema.cjs',s=>{
+            const old=`  if (!integerIn(c.autoBroadcast?.intervalSeconds ?? 600, 30, 86400)) errors.push(issue('autoBroadcast.intervalSeconds', 'Auto-Broadcast Intervall muss zwischen 30 und 86400 Sekunden liegen.'));
+  if (!integerIn(c.autoBroadcast?.startDelaySeconds ?? 30, 0, 86400)) errors.push(issue('autoBroadcast.startDelaySeconds', 'Auto-Broadcast Startverzögerung ist ungültig.'));
+  if (!['sequence','random'].includes(String(c.autoBroadcast?.mode || 'sequence'))) errors.push(issue('autoBroadcast.mode', 'Auto-Broadcast Modus muss sequence oder random sein.'));
+`;
+            const neo=`  if (!numberIn(c.autoBroadcast?.globalMinGapSeconds ?? 3, 0, 3600)) errors.push(issue('autoBroadcast.globalMinGapSeconds', 'Globaler Broadcast-Mindestabstand muss zwischen 0 und 3600 Sekunden liegen.'));
+  if (!numberIn(c.autoBroadcast?.platformMinGapSeconds ?? 5, 0, 3600)) errors.push(issue('autoBroadcast.platformMinGapSeconds', 'Plattform-Mindestabstand muss zwischen 0 und 3600 Sekunden liegen.'));
+  const broadcastItems=c.autoBroadcast?.items;
+  if (!Array.isArray(broadcastItems)) errors.push(issue('autoBroadcast.items','Auto-Broadcasts müssen als Liste gespeichert werden.'));
+  else if (broadcastItems.length>100) errors.push(issue('autoBroadcast.items','Höchstens 100 Auto-Broadcasts sind erlaubt.'));
+  else { const ids=new Set(), allowedTargets=new Set(['local','cng','twitch','tiktok','youtube']); for(let i=0;i<broadcastItems.length;i++){ const item=broadcastItems[i]||{},base=\`autoBroadcast.items.\${i}\`; if(typeof item.id!=='string'||!/^[a-zA-Z0-9_-]{1,100}$/.test(item.id))errors.push(issue(\`\${base}.id\`,'Ungültige Broadcast-ID.'));else if(ids.has(item.id))errors.push(issue(\`\${base}.id\`,'Doppelte Broadcast-ID.'));else ids.add(item.id); if(!Array.isArray(item.messages)||!item.messages.length||item.messages.length>200||item.messages.some(v=>!String(v).trim()||String(v).length>500))errors.push(issue(\`\${base}.messages\`,'1 bis 200 Nachrichten mit maximal 500 Zeichen erforderlich.')); if(!Array.isArray(item.targets)||!item.targets.length||item.targets.some(v=>!allowedTargets.has(v)))errors.push(issue(\`\${base}.targets\`,'Mindestens ein gültiges Ausgabeziel ist erforderlich.')); if(!integerIn(item.intervalSeconds??600,30,86400))errors.push(issue(\`\${base}.intervalSeconds\`,'Intervall muss zwischen 30 und 86400 Sekunden liegen.')); if(!integerIn(item.startDelaySeconds??30,0,86400))errors.push(issue(\`\${base}.startDelaySeconds\`,'Startverzögerung ist ungültig.')); if(!['fixed','random'].includes(String(item.intervalMode||'fixed')))errors.push(issue(\`\${base}.intervalMode\`,'Intervalltyp muss fixed oder random sein.')); if(!integerIn(item.minIntervalSeconds??300,30,86400)||!integerIn(item.maxIntervalSeconds??900,30,86400)||Number(item.maxIntervalSeconds??900)<Number(item.minIntervalSeconds??300))errors.push(issue(\`\${base}.randomInterval\`,'Zufallsintervall ist ungültig.')); if(!['sequence','random'].includes(String(item.mode||'sequence')))errors.push(issue(\`\${base}.mode\`,'Textmodus muss sequence oder random sein.')); if(!integerIn(item.activityWindowSeconds??300,10,86400))errors.push(issue(\`\${base}.activityWindowSeconds\`,'Aktivitätsfenster ist ungültig.')); if(!integerIn(item.minChatMessages??1,1,5000))errors.push(issue(\`\${base}.minChatMessages\`,'Chat-Mindestanzahl ist ungültig.')); if(!integerIn(item.retryDelaySeconds??30,5,3600))errors.push(issue(\`\${base}.retryDelaySeconds\`,'Retry-Verzögerung ist ungültig.')); } }
+`;
+            return must(s,old,neo,'broadcast schema');
+          });
+
+          edit('electron/main21.cjs',s=>{
+            s=must(s,"const { ActionEngine } = require('../src/core/action-engine.cjs');","const { ActionEngine } = require('../src/core/action-engine.cjs');\nconst { BroadcastScheduler, normalizeItem } = require('../src/core/broadcast/scheduler.cjs');",'scheduler import');
+            s=must(s,"let autoBroadcastTimer = null;\nlet autoBroadcastDelayTimer = null;\nlet autoBroadcastIndex = 0;","let broadcastScheduler;",'scheduler variable');
+            const a=s.indexOf('function broadcastMessageNow() {'), b=s.indexOf('function powershell(script) {',a); if(a<0||b<0)throw new Error('old broadcast runtime not found');
+            s=s.slice(0,a)+`function configureBroadcastScheduler() {\n  if (!broadcastScheduler) return;\n  try { broadcastScheduler.configure(currentConfig().autoBroadcast || {}); }\n  catch (error) { bridgeLog('error','Auto-Broadcast','CONFIG_INVALID',{message:error.message}); }\n}\n\n`+s.slice(b);
+            s=must(s,'  if (patch.autoBroadcast) restartAutoBroadcast();','  if (patch.autoBroadcast) configureBroadcastScheduler();','apply scheduler config');
+            s=must(s,"    const accepted = chatCore.ingest(normalizedToChat(event));\n    if (!accepted) return;","    const accepted = chatCore.ingest(normalizedToChat(event));\n    if (!accepted) return;\n    broadcastScheduler?.noteChat(event.platform);",'chat activity');
+            const engineEnd=`    onLog: bridgeLog\n  });`;
+            s=must(s,engineEnd,engineEnd+`\n\n  broadcastScheduler = new BroadcastScheduler({\n    send:(platform,text,options)=>sendOutbound(platform,text,options),\n    isLive:()=>{const status=obs?.getStatus?.()||{};return Boolean(status.outputActive||status.streaming||status.streamActive);},\n    onStatus:(status)=>send('broadcast:status',status)\n  });\n  configureBroadcastScheduler();`,'scheduler init');
+            s=must(s,'  restartAutoBroadcast();','  broadcastScheduler?.start();','scheduler start');
+            const old=`  ipcMain.handle('broadcast:test', async () => {\n    const cfg = currentConfig().autoBroadcast || {}; const messages = (cfg.messages || []).filter(Boolean); if (!messages.length) return { ok:false, error:'Keine Broadcast-Nachricht eingetragen.' };\n    const results = []; for (const platform of cfg.targets || []) { try { results.push({ platform, ...(await sendOutbound(platform, messages[0], { source:'broadcast-test' })) }); } catch (error) { results.push({ platform, ok:false, error:error.message }); } }\n    return { ok: results.some((x) => x.ok), results };\n  });`;
+            const neo=`  ipcMain.handle('broadcast:status',()=>broadcastScheduler?.status()||{enabled:false,items:[]});\n  ipcMain.handle('broadcast:test',async(_event,input)=>{try{return await broadcastScheduler.test(input)}catch(error){return{ok:false,error:error.message,results:[]}}});\n  ipcMain.handle('broadcast:master',(_event,patch={})=>{try{const cfg=currentConfig();const next=configStore.merge({autoBroadcast:{...cfg.autoBroadcast,enabled:patch.enabled??cfg.autoBroadcast.enabled,globalMinGapSeconds:patch.globalMinGapSeconds??cfg.autoBroadcast.globalMinGapSeconds,platformMinGapSeconds:patch.platformMinGapSeconds??cfg.autoBroadcast.platformMinGapSeconds}});settingsService.discard();configureBroadcastScheduler();send('config:changed',next);return{ok:true,config:next,status:broadcastScheduler.status()}}catch(error){return{ok:false,error:error.message}}});\n  ipcMain.handle('broadcast:upsert',(_event,payload={})=>{try{const cfg=currentConfig(),item=normalizeItem(payload,payload.id||crypto.randomUUID()),items=[...(cfg.autoBroadcast.items||[])],index=items.findIndex(x=>x.id===item.id);if(index>=0)items[index]=item;else items.push(item);const next=configStore.merge({autoBroadcast:{...cfg.autoBroadcast,items}});settingsService.discard();configureBroadcastScheduler();send('config:changed',next);return{ok:true,item,config:next,status:broadcastScheduler.status()}}catch(error){return{ok:false,error:error.message}}});\n  ipcMain.handle('broadcast:delete',(_event,id)=>{try{const cfg=currentConfig(),items=(cfg.autoBroadcast.items||[]).filter(x=>x.id!==id);if(items.length===(cfg.autoBroadcast.items||[]).length)return{ok:false,error:'Broadcast nicht gefunden.'};const next=configStore.merge({autoBroadcast:{...cfg.autoBroadcast,items}});settingsService.discard();configureBroadcastScheduler();send('config:changed',next);return{ok:true,config:next,status:broadcastScheduler.status()}}catch(error){return{ok:false,error:error.message}}});\n  ipcMain.handle('broadcast:duplicate',(_event,id)=>{try{const cfg=currentConfig(),source=(cfg.autoBroadcast.items||[]).find(x=>x.id===id);if(!source)return{ok:false,error:'Broadcast nicht gefunden.'};const item=normalizeItem({...source,id:crypto.randomUUID(),name:\`\${source.name} – Kopie\`,enabled:false});const next=configStore.merge({autoBroadcast:{...cfg.autoBroadcast,items:[...(cfg.autoBroadcast.items||[]),item]}});settingsService.discard();configureBroadcastScheduler();send('config:changed',next);return{ok:true,item,config:next,status:broadcastScheduler.status()}}catch(error){return{ok:false,error:error.message}}});`;
+            s=must(s,old,neo,'broadcast ipc');
+            s=must(s,"  clearTimeout(autoBroadcastDelayTimer);\n  clearInterval(autoBroadcastTimer);","  broadcastScheduler?.stop();",'scheduler shutdown');
+            return s;
+          });
+
+          edit('electron/preload.cjs',s=>{
+            s=must(s,"  testBroadcast: () => ipcRenderer.invoke('broadcast:test'),","  testBroadcast: (input) => ipcRenderer.invoke('broadcast:test', input),\n  broadcastTest: (input) => ipcRenderer.invoke('broadcast:test', input),\n  broadcastStatus: () => ipcRenderer.invoke('broadcast:status'),\n  broadcastMaster: (patch) => ipcRenderer.invoke('broadcast:master', patch),\n  broadcastUpsert: (item) => ipcRenderer.invoke('broadcast:upsert', item),\n  broadcastDelete: (id) => ipcRenderer.invoke('broadcast:delete', id),\n  broadcastDuplicate: (id) => ipcRenderer.invoke('broadcast:duplicate', id),",'broadcast preload');
+            s=must(s,"  onDatabaseStatus: (cb) => on('database:status', cb)","  onDatabaseStatus: (cb) => on('database:status', cb),\n  onBroadcastStatus: (cb) => on('broadcast:status', cb)",'broadcast status preload');
+            return s;
+          });
+
+          edit('src/renderer/index.html',s=>{
+            s=must(s,'  <link rel="stylesheet" href="./styles.css" />','  <link rel="stylesheet" href="./styles.css" />\n  <link rel="stylesheet" href="./marble-gold.css" />\n  <link rel="stylesheet" href="./gold-final.css" />','gold styles');
+            s=must(s,'          <button class="nav-item active" data-view="dashboard"><b>▣</b><span>Multi-Chat</span></button>','          <button class="nav-item active" data-view="start"><b>⌂</b><span>Start</span></button>\n          <button class="nav-item" data-view="dashboard"><b>▣</b><span>Multi-Chat</span></button>','start nav');
+            s=must(s,'        <section class="view active" data-view-panel="dashboard">','        <section class="view start-view active" data-view-panel="start">\n          <img class="start-art" src="../assets/source/start-original.png" alt="CRAZY_BATTO Startseite">\n        </section>\n        <section class="view" data-view-panel="dashboard">','start panel');
+            s=must(s,'  <script src="./app.js"></script>','  <script src="./broadcast-ui.js"></script>\n  <script src="./app.js"></script>\n  <script src="./gold-runtime.js"></script>','gold scripts');
+            return s;
+          });
+          JS
+      - name: Syntax check changed files
+        run: node --check electron/main21.cjs && node --check electron/preload.cjs && node --check src/core/config-store.cjs && node --check src/core/settings/schema.cjs && node --check src/renderer/gold-runtime.js
+      - name: Commit integration and trigger final delivery
+        shell: bash
+        run: |
+          printf '\n# source-integrated-%s\n' "$(date +%s)" >> .github/workflows/marmor-gold-final.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add electron/main21.cjs electron/preload.cjs src/core/config-store.cjs src/core/settings/schema.cjs src/renderer/index.html src/renderer/gold-final.css src/renderer/gold-runtime.js .github/workflows/marmor-gold-final.yml
+          git commit -m 'Complete 2.1.2 Start, Marmor-Gold and independent Auto-Broadcast runtime'
+          git push origin HEAD:build/batto-obs-tool-2.1-core
