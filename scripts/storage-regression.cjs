@@ -11,6 +11,9 @@ try {
   const store = new ConfigStore(dir);
   store.merge({ general: { displayName: 'Storage test' } });
   assert.equal(new ConfigStore(dir).get().general.displayName, 'Storage test');
+  const widgets=[{id:'follow-alert',name:'Neue Follower',eventType:'follow',url:'https://tikfinity.zerody.one/widget/follow?cid=storage-test',enabled:true}];
+  store.merge({platforms:{tikfinity:{webWidgets:widgets}}});
+  assert.deepEqual(new ConfigStore(dir).get().platforms.tikfinity.webWidgets,widgets);
   const file = path.join(dir, 'atomic.json');
   atomicWrite(file, 'original');
   const originalFsync = fs.fsyncSync;

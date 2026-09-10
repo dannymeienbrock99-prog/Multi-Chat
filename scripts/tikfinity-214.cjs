@@ -3,6 +3,12 @@ const fs=require('node:fs');
 const path=require('node:path');
 function apply(root=path.resolve(__dirname,'..')){
   const p=x=>path.join(root,x);
+  const configSource=fs.readFileSync(p('src/core/config-store.cjs'),'utf8');
+  const rendererSource=fs.readFileSync(p('src/renderer/app.js'),'utf8');
+  if(configSource.includes('DEFAULT_TIKFINITY_WIDGETS') && rendererSource.includes('TikFinity HTTPS-Browser-Widgets')){
+    console.log('Native TikFinity HTTPS widget integration already present.');
+    return;
+  }
   const must=(s,a,b,label=a.slice(0,80))=>{if(!s.includes(a))throw new Error('TikFinity 2.1.4 patch target missing: '+label);return s.replace(a,b)};
   const file=(name,fn)=>{const target=p(name),before=fs.readFileSync(target,'utf8'),after=fn(before);if(after!==before)fs.writeFileSync(target,after,'utf8')};
 

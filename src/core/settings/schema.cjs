@@ -1,6 +1,7 @@
 const { normalizeItem, LIMIT } = require('../broadcast/scheduler.cjs');
 const PORT_MIN = 1024;
 const PORT_MAX = 65535;
+const TIKFINITY_WIDGET_TYPES = new Set(['chat','follow','gift','like','share','subscribe','goal','ranking','custom']);
 
 function issue(path, message) { return { path, message }; }
 function integerIn(value, min, max) { const n=Number(value); return Number.isInteger(n) && n>=min && n<=max; }
@@ -13,6 +14,16 @@ function validateUrl(value, { ws = false, http = false, allowEmpty = true } = {}
     if (ws && !['ws:', 'wss:'].includes(url.protocol)) return false;
     if (http && !['http:', 'https:'].includes(url.protocol)) return false;
     return true;
+  } catch { return false; }
+}
+
+function isTikFinityWidgetUrl(value) {
+  try {
+    const url = new URL(String(value || '').trim());
+    const hostname = url.hostname.toLowerCase();
+    return url.protocol === 'https:'
+      && (hostname === 'tikfinity.zerody.one' || hostname.endsWith('.tikfinity.zerody.one'))
+      && /^\/widget(?:\/|$)/i.test(url.pathname);
   } catch { return false; }
 }
 
@@ -31,6 +42,22 @@ function validateConfig(config) {
   if (!integerIn(c.obs?.requestTimeoutMs ?? 5000, 500, 60000)) errors.push(issue('obs.requestTimeoutMs', 'OBS Request-Timeout muss zwischen 500 und 60000 ms liegen.'));
 
   if (c.platforms?.tikfinity?.url && !validateUrl(c.platforms.tikfinity.url, { ws:true })) errors.push(issue('platforms.tikfinity.url', 'TikFinity-Adresse muss ws:// oder wss:// verwenden.'));
+  const tikfinityWidgets=c.platforms?.tikfinity?.webWidgets;
+  if (!Array.isArray(tikfinityWidgets) || tikfinityWidgets.length>24) errors.push(issue('platforms.tikfinity.webWidgets', 'TikFinity erlaubt maximal 24 HTTPS-Widgets.'));
+  else {
+    const ids=new Set();
+    tikfinityWidgets.forEach((widget,index)=>{
+      const base=`platforms.tikfinity.webWidgets.${index}`;
+      const id=String(widget?.id || '');
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(id)) errors.push(issue(`${base}.id`, 'Widget-ID ist ungültig.'));
+      else if (ids.has(id)) errors.push(issue(`${base}.id`, 'Widget-ID ist doppelt.'));
+      else ids.add(id);
+      if (!String(widget?.name || '').trim() || String(widget.name).length>80) errors.push(issue(`${base}.name`, 'Widget-Name muss 1 bis 80 Zeichen haben.'));
+      if (!TIKFINITY_WIDGET_TYPES.has(String(widget?.eventType || ''))) errors.push(issue(`${base}.eventType`, 'Unbekannter TikFinity-Widget-Typ.'));
+      if (!isTikFinityWidgetUrl(widget?.url)) errors.push(issue(`${base}.url`, 'Widget-URL muss eine HTTPS-Adresse unter tikfinity.zerody.one/widget/ sein.'));
+      if (typeof widget?.enabled !== 'boolean') errors.push(issue(`${base}.enabled`, 'Widget-Status muss aktiviert oder deaktiviert sein.'));
+    });
+  }
   if (c.platforms?.axelchat?.url && !validateUrl(c.platforms.axelchat.url, { ws:true })) errors.push(issue('platforms.axelchat.url', 'AxelChat-Adresse muss ws:// oder wss:// verwenden.'));
   if (!integerIn(c.platforms?.youtube?.pollMs ?? 2500, 1000, 60000)) errors.push(issue('platforms.youtube.pollMs', 'YouTube-Polling muss zwischen 1000 und 60000 ms liegen.'));
   for (const key of ['alertOverlayUrl','ghostChatUrl']) {
@@ -104,4 +131,4 @@ function assertValidConfig(config) {
   return config;
 }
 
-module.exports = { PORT_MIN, PORT_MAX, validateConfig, assertValidConfig, validateUrl };
+module.exports = { PORT_MIN, PORT_MAX, TIKFINITY_WIDGET_TYPES, validateConfig, assertValidConfig, validateUrl, isTikFinityWidgetUrl };

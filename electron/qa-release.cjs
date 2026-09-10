@@ -43,6 +43,16 @@ module.exports=async function({win,run,waitFor,checks,dir,profile}){
   await run(`document.querySelector('#familyBranding').scrollIntoView({block:'start'});`);await capture('04-Einstellungen-Logos');
   await run(`document.querySelector('#settingsAudio').scrollIntoView({block:'center'});`);await capture('05-TTS-Ausgabe');
   checks.push('Settings: both original logos render; speaker selection and volume share persisted TTS configuration');
+  await run(`setView('platforms');`);
+  await waitFor(()=>run(`return !!document.querySelector('#pfTikWidgetUrl');`),'TikFinity HTTPS widget manager');
+  assert.equal(await run(`return S.config.platforms.tikfinity.webWidgets[0].url;`),'https://tikfinity.zerody.one/widget/chat?cid=676051');
+  await run(`document.querySelector('#pfTikUrl').value='https://tikfinity.zerody.one/widget/follow?cid=qa-installed';await document.querySelector('#pfSave').onclick();`);
+  await waitFor(()=>run(`return S.config.platforms.tikfinity.webWidgets.some(w=>w.url==='https://tikfinity.zerody.one/widget/follow?cid=qa-installed');`),'HTTPS URL imported from WebSocket field');
+  assert.match(await run(`return S.config.platforms.tikfinity.url;`),/^wss?:\/\//);
+  const qaWidget=await run(`return S.config.platforms.tikfinity.webWidgets.find(w=>w.url==='https://tikfinity.zerody.one/widget/follow?cid=qa-installed');`);
+  const qaRedirect=await fetch('http://127.0.0.1:17777/overlay/tikfinity/'+encodeURIComponent(qaWidget.id),{redirect:'manual'});
+  assert.equal(qaRedirect.status,302);assert.equal(qaRedirect.headers.get('location'),qaWidget.url);
+  checks.push('TikFinity HTTPS URL survives wrong-field paste, persists separately and has a stable OBS route');
   // Exercise the same normalizer and action engine on every platform with local-only outputs.
   await run(`await window.batto.saveConfig({commands:[...S.config.commands,{id:'qa-all',enabled:true,trigger:'!qa-all',platform:'all',cooldownSeconds:0,actions:[{type:'chat',platform:'local',text:'QA PLATFORM {platform}'}]}]});`);
   for(const platform of ['twitch','tiktok','cng','youtube']){
@@ -51,6 +61,8 @@ module.exports=async function({win,run,waitFor,checks,dir,profile}){
   }
   checks.push('Actual event core -> all-platform command -> local response for Twitch, TikTok, CNG, YouTube');
   await run(`setView('dashboard');await window.batto.detachChat();`);
+  await waitFor(()=>run(`return ['tiktok','twitch','youtube','cng'].every(p=>!!document.querySelector('.platform-icon.'+p+' img'));`),'Platform logos in Multi-Chat');
+  checks.push('Original source logos render on TikTok, Twitch, YouTube and CNG chat rows');
   const detached=await waitFor(()=>BrowserWindow.getAllWindows().find(w=>w!==win),'Detached window');
   const other=code=>detached.webContents.executeJavaScript(`(async()=>{${code}})()`,true);
   await waitFor(()=>other(`return document.body.classList.contains('detached')&&typeof S!=='undefined'&&!!S.config;`),'Detached renderer');
@@ -67,8 +79,8 @@ module.exports=async function({win,run,waitFor,checks,dir,profile}){
   checks.push('Overlay HTTP works; cross-origin access is denied');
   assert.deepEqual(await run('return window.__qaErrors;'),[]);
   const saved=JSON.parse(fs.readFileSync(path.join(profile,'Batto-OBS-Tool/settings.json'),'utf8'));
-  assert.equal(saved.schemaVersion,4);assert.equal(saved.autoBroadcast.items.length,1);assert.equal(saved.autoBroadcast.items[0].name,'QA Broadcast B');assert.equal(saved.tts.volume,.37);
-  fs.writeFileSync(path.join(dir,'resume-expectations.json'),JSON.stringify({schemaVersion:4,broadcasts:1,broadcastName:'QA Broadcast B',volume:.37}));
+  assert.equal(saved.schemaVersion,5);assert.equal(saved.autoBroadcast.items.length,1);assert.equal(saved.autoBroadcast.items[0].name,'QA Broadcast B');assert.equal(saved.tts.volume,.37);
+  fs.writeFileSync(path.join(dir,'resume-expectations.json'),JSON.stringify({schemaVersion:5,broadcasts:1,broadcastName:'QA Broadcast B',volume:.37}));
   await run(`setView('start');`);
-  checks.push('No renderer errors; persisted schema-4 settings ready for independent restart test');
+  checks.push('No renderer errors; persisted schema-5 settings ready for independent restart test');
 };

@@ -22,7 +22,8 @@ const S = {
   eventEdit: null,
   poolEdit: null,
   ttsVoices: [],
-  audioOutputs: []
+  audioOutputs: [],
+  tikfinityWidgetEdit: null
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -42,8 +43,40 @@ function toast(message, error = false) {
   toast.timer = setTimeout(() => { el.hidden = true; }, 4200);
 }
 
+const PLATFORM_META = Object.freeze({
+  tiktok: { label:'TikTok', logo:'../assets/platforms/tiktok.svg' },
+  twitch: { label:'Twitch', logo:'../assets/platforms/twitch.svg' },
+  youtube: { label:'YouTube', logo:'../assets/platforms/youtube.svg' },
+  cng: { label:'CNG', logo:'https://cng-plattform.com/manus-storage/favicon_e3fccd67.png' },
+  internal: { label:'Lokal', logo:'' }
+});
+const TIKFINITY_WIDGET_TYPES = Object.freeze([
+  ['chat','Chat'],['follow','Neue Follower'],['gift','Geschenke'],['like','Likes'],['share','Shares'],
+  ['subscribe','Abos'],['goal','Ziele'],['ranking','Rangliste'],['custom','Sonstiges']
+]);
+
+function platformKey(platform) {
+  const key=String(platform || '').toLowerCase();
+  return PLATFORM_META[key] ? key : 'internal';
+}
+
 function platformIcon(platform) {
-  return platform === 'tiktok' ? 'TT' : platform === 'twitch' ? 'TW' : platform === 'youtube' ? 'YT' : platform === 'cng' ? 'CNG' : '•';
+  const meta=PLATFORM_META[platformKey(platform)];
+  return meta.logo ? `<img src="${meta.logo}" alt="${meta.label}" title="${meta.label}">` : '•';
+}
+
+function isTikFinityHttpsUrl(value) {
+  try {
+    const url=new URL(String(value || '').trim());
+    return url.protocol==='https:'
+      && (url.hostname.toLowerCase()==='tikfinity.zerody.one' || url.hostname.toLowerCase().endsWith('.tikfinity.zerody.one'))
+      && /^\/widget(?:\/|$)/i.test(url.pathname);
+  } catch { return false; }
+}
+
+function inferTikFinityWidgetType(value) {
+  const lower=String(value || '').toLowerCase();
+  return TIKFINITY_WIDGET_TYPES.find(([type])=>type!=='custom' && lower.includes(type))?.[0] || 'custom';
 }
 
 function statusClass(status) {
@@ -110,7 +143,7 @@ function renderChat() {
 
   const rows = S.chatTab === 'all' ? S.messages : S.messages.filter((message) => message.platform === S.chatTab);
   $('#chatList').innerHTML = rows.length
-    ? rows.slice(-250).map((message) => `<div class="chat-row"><span class="chat-time">${time(message.timestamp)}</span><span class="platform-icon ${message.platform}">${platformIcon(message.platform)}</span><span class="chat-user ${message.platform}" data-user="${esc(message.username)}" data-platform="${esc(message.platform)}">${esc(message.displayName || message.username)}</span><span class="chat-text">${esc(message.message)}</span></div>`).join('')
+    ? rows.slice(-250).map((message) => { const platform=platformKey(message.platform); const label=PLATFORM_META[platform].label; return `<div class="chat-row"><span class="chat-time">${time(message.timestamp)}</span><span class="platform-icon ${platform}" aria-label="${label}">${platformIcon(platform)}</span><span class="chat-user ${platform}" data-user="${esc(message.username)}" data-platform="${platform}">${esc(message.displayName || message.username)}</span><span class="chat-text">${esc(message.message)}</span></div>`; }).join('')
     : `<div class="empty"><div><b>Noch keine Nachrichten</b><br><small>TikFinity, AxelChat, Twitch oder YouTube verbinden.</small></div></div>`;
 
   $$('.chat-user').forEach((el) => {
@@ -220,15 +253,17 @@ async function saveCohost() {
 }
 
 function connItem(icon, name, sub, status) {
-  const cls = status?.connected ? 'ok' : status?.state === 'error' ? 'error' : '';
+  const cls = status?.connected ? 'ok' : status?.ready ? 'warn' : status?.state === 'error' ? 'error' : '';
   const text = status?.connected ? 'Verbunden' : status?.state || 'Nicht verbunden';
   return `<div class="connection-item"><span class="ico">${icon}</span><div><strong>${name}</strong><small>${sub}</small></div><span class="conn-state ${cls}">${esc(text)}</span></div>`;
 }
 
 function renderConnections() {
   const adapters = S.adapters || {};
+  const widgets=(S.config?.platforms?.tikfinity?.webWidgets || []).filter((widget)=>widget.enabled);
   $('#connectionList').innerHTML =
     connItem('TF', 'TikFinity Local Bridge', 'ohne Euler/API · lokal', adapters.tikfinity) +
+    connItem('↗', 'TikFinity HTTPS-Widgets', `${widgets.length} für OBS gespeichert`, { ready:widgets.length>0, state:widgets.length ? 'konfiguriert' : 'nicht eingerichtet' }) +
     connItem('AX', 'AxelChat WebSocket', 'lokale Chat-Bridge', adapters.axelchat) +
     connItem('TW', 'Twitch Direkt-Chat', 'Nur-Lesen ohne Tokenfeld', adapters.twitch) +
     connItem('YT', 'YouTube Live-Chat', 'Data API', adapters.youtube) +
@@ -236,7 +271,8 @@ function renderConnections() {
   $('#obsChip').className = `chip ${S.obs?.connected ? 'ok' : S.obs?.state === 'error' ? 'error' : ''}`;
   $('#overlayChip').className = `chip ${S.overlay?.running ? 'ok' : 'error'}`;
   $('#overlayChip').innerHTML = `<i></i>Overlay ${S.overlay?.port || S.config?.http?.port || 8787}`;
-  $('#tikfinityChip').className = `chip ${adapters.tikfinity?.connected ? 'ok' : adapters.tikfinity?.state === 'error' ? 'error' : ''}`;
+  $('#tikfinityChip').className = `chip ${adapters.tikfinity?.connected ? 'ok' : widgets.length ? 'warn' : adapters.tikfinity?.state === 'error' ? 'error' : ''}`;
+  $('#tikfinityChip').innerHTML = `<i></i>${adapters.tikfinity?.connected ? 'TikFinity Bridge' : widgets.length ? `TikFinity HTTPS (${widgets.length})` : 'TikFinity getrennt'}`;
 }
 
 function renderDashboard() {
@@ -327,8 +363,23 @@ function adapterCard(name, title, desc, fields = '') {
 function renderPlatformsModule() {
   const c = S.config.platforms;
   const cng = c.cng || {};
+  const tikfinity = c.tikfinity || {};
+  const widgets = Array.isArray(tikfinity.webWidgets) ? tikfinity.webWidgets : [];
+  const editingWidget = widgets.find((widget) => widget.id === S.tikfinityWidgetEdit) || null;
+  const widgetTypeOptions = TIKFINITY_WIDGET_TYPES.map(([value,label]) => `<option value="${value}" ${value === (editingWidget?.eventType || 'chat') ? 'selected' : ''}>${label}</option>`).join('');
+  const widgetRows = widgets.map((widget) => {
+    const obsUrl = `${overlayBase()}/overlay/tikfinity/${encodeURIComponent(widget.id)}`;
+    const typeLabel = TIKFINITY_WIDGET_TYPES.find(([value]) => value === widget.eventType)?.[1] || 'Sonstiges';
+    return `<article class="tikfinity-widget-row ${widget.enabled ? '' : 'disabled'}">
+      <div class="tikfinity-widget-head"><span class="platform-icon tiktok">${platformIcon('tiktok')}</span><div><strong>${esc(widget.name)}</strong><small>${esc(typeLabel)} · ${widget.enabled ? 'aktiv' : 'deaktiviert'}</small></div></div>
+      <code class="tikfinity-direct-url" title="${esc(widget.url)}">${esc(widget.url)}</code>
+      <div class="url-row"><span>Stabile OBS-URL</span><code>${esc(obsUrl)}</code><button data-tf-copy-obs="${esc(widget.id)}">Kopieren</button></div>
+      <div class="toolbar"><button data-tf-open="${esc(widget.id)}">Vorschau</button><button data-tf-copy-direct="${esc(widget.id)}">TikFinity-URL kopieren</button><button data-tf-edit="${esc(widget.id)}">Bearbeiten</button><button data-tf-toggle="${esc(widget.id)}">${widget.enabled ? 'Deaktivieren' : 'Aktivieren'}</button><button class="danger" data-tf-delete="${esc(widget.id)}">Löschen</button></div>
+    </article>`;
+  }).join('');
   $('#platformsModule').innerHTML =
-    adapterCard('tikfinity', 'TikFinity Local Bridge', 'Lokale Event-/Chat-Bridge ohne Euler-Pflicht. TikFinity Desktop muss auf demselben PC laufen.', `<div class="form-grid"><div><label>WebSocket</label><input id="pfTikUrl" value="${esc(c.tikfinity.url)}"></div><div><label>Reconnect Sekunden</label><input id="pfTikRec" type="number" value="${c.tikfinity.reconnectSeconds}"></div></div><label class="check"><input id="pfTikAuto" type="checkbox" ${c.tikfinity.autoConnect ? 'checked' : ''}> Automatisch verbinden</label>`) +
+    adapterCard('tikfinity', 'TikFinity Event-/Chat-Bridge (WebSocket)', 'Für echte Chatnachrichten und Events im Multi-Chat. Hier gehört nur ws:// oder wss:// hinein; TikFinity-HTTPS-Links werden dauerhaft im Bereich darunter gespeichert.', `<div class="form-grid"><div><label>Lokaler WebSocket</label><input id="pfTikUrl" value="${esc(tikfinity.url)}" placeholder="ws://127.0.0.1:21213/"></div><div><label>Reconnect Sekunden</label><input id="pfTikRec" type="number" value="${tikfinity.reconnectSeconds}"></div></div><label class="check"><input id="pfTikAuto" type="checkbox" ${tikfinity.autoConnect ? 'checked' : ''}> Automatisch verbinden</label>`) +
+    section('TikFinity HTTPS-Browser-Widgets', `<div class="success-note">TikFinity-Links wie <b>https://tikfinity.zerody.one/widget/…</b> bleiben jetzt dauerhaft gespeichert. Lege getrennte Widgets für Chat, neue Follower, Geschenke, Likes, Shares, Abos, Ziele und weitere Anzeigen an. Die lokale OBS-URL bleibt gleich, auch wenn du später den TikFinity-Link änderst.</div><div class="warning-note" style="margin-top:8px">HTTPS-Widgets zeigen TikFinity direkt in OBS an. Damit Events zusätzlich Commands, TTS oder Medien im Batto Tool auslösen, muss die WebSocket-Bridge oben verbunden sein.</div><div class="form-grid three" style="margin-top:10px"><div><label>Widget-Name</label><input id="pfTikWidgetName" maxlength="80" value="${esc(editingWidget?.name || '')}" placeholder="z. B. Neue Follower"></div><div><label>Anzeige / Event</label><select id="pfTikWidgetType">${widgetTypeOptions}</select></div><div><label>TikFinity HTTPS-URL</label><input id="pfTikWidgetUrl" type="url" value="${esc(editingWidget?.url || '')}" placeholder="https://tikfinity.zerody.one/widget/..."></div></div><label class="check"><input id="pfTikWidgetEnabled" type="checkbox" ${editingWidget?.enabled === false ? '' : 'checked'}> Widget aktiv</label><div class="toolbar"><button class="primary" id="pfTikWidgetSave">${editingWidget ? 'Änderungen speichern' : 'HTTPS-Widget hinzufügen'}</button>${editingWidget ? '<button id="pfTikWidgetCancel">Abbrechen</button>' : ''}<span class="conn-state ${widgets.some((widget) => widget.enabled) ? 'ok' : ''}">${widgets.filter((widget) => widget.enabled).length} aktiv · ${widgets.length}/24 gespeichert</span></div><div class="tikfinity-widget-list">${widgetRows || '<small>Noch kein TikFinity HTTPS-Widget gespeichert.</small>'}</div>`) +
     adapterCard('axelchat', 'AxelChat WebSocket', 'Zusätzliche lokale Chat-Bridge.', `<div class="form-grid"><div><label>WebSocket</label><input id="pfAxUrl" value="${esc(c.axelchat.url)}"></div><div><label>Reconnect Sekunden</label><input id="pfAxRec" type="number" value="${c.axelchat.reconnectSeconds}"></div></div><label class="check"><input id="pfAxAuto" type="checkbox" ${c.axelchat.autoConnect ? 'checked' : ''}> Automatisch verbinden</label>`) +
     adapterCard('twitch', 'Twitch Direkt-Chat', 'Öffentlichen Chat direkt lesen. Kein Tokenfeld; Senden/Plattformmoderation bleiben im Nur-Lesen-Modus deaktiviert.', `<div><label>Channel / Twitch-URL / Dashboard-URL</label><input id="pfTwChannel" value="${esc(c.twitch.channel)}"></div><label class="check"><input id="pfTwAuto" type="checkbox" ${c.twitch.autoConnect ? 'checked' : ''}> Automatisch verbinden</label>`) +
     adapterCard('youtube', 'YouTube Live-Chat', 'Live Chat ID + eigener API Key. Key wird verschlüsselt gespeichert.', `<div class="form-grid"><div><label>Live Chat ID</label><input id="pfYtId" value="${esc(c.youtube.liveChatId)}"></div><div><label>API Key ${S.secrets.youtubeApiKey ? '(gespeichert)' : ''}</label><input id="pfYtKey" type="password" placeholder="${S.secrets.youtubeApiKey ? 'nur zum Ändern eingeben' : 'API Key'}"></div><div><label>Polling ms</label><input id="pfYtPoll" type="number" value="${c.youtube.pollMs}"></div></div><label class="check"><input id="pfYtAuto" type="checkbox" ${c.youtube.autoConnect ? 'checked' : ''}> Automatisch verbinden</label>`) +
@@ -337,11 +388,58 @@ function renderPlatformsModule() {
     `<div class="toolbar"><button class="primary" id="pfSave">Plattform-Einstellungen speichern</button></div>`;
 
   $('#pfSave').onclick = async () => { const youtubeKey = $('#pfYtKey').value;
-    const patch = { platforms: { ...c, tikfinity: { ...c.tikfinity, url: $('#pfTikUrl').value, reconnectSeconds: Number($('#pfTikRec').value), autoConnect: $('#pfTikAuto').checked }, axelchat: { ...c.axelchat, url: $('#pfAxUrl').value, reconnectSeconds: Number($('#pfAxRec').value), autoConnect: $('#pfAxAuto').checked }, twitch: { ...c.twitch, channel: $('#pfTwChannel').value, autoConnect: $('#pfTwAuto').checked }, youtube: { ...c.youtube, liveChatId: $('#pfYtId').value, pollMs: Number($('#pfYtPoll').value), autoConnect: $('#pfYtAuto').checked } } };
+    const enteredTikfinityUrl=$('#pfTikUrl').value.trim();
+    let socketUrl=enteredTikfinityUrl;
+    let nextWidgets=widgets;
+    let importedHttps=false;
+    if (isTikFinityHttpsUrl(enteredTikfinityUrl)) {
+      const alreadyStored=widgets.some((widget)=>widget.url===enteredTikfinityUrl);
+      if (!alreadyStored && widgets.length >= 24) return toast('Maximal 24 TikFinity-Widgets sind möglich.', true);
+      importedHttps=true;
+      socketUrl=/^wss?:\/\//i.test(tikfinity.url || '') ? tikfinity.url : 'ws://127.0.0.1:21213/';
+      if (!alreadyStored) {
+        const eventType=inferTikFinityWidgetType(enteredTikfinityUrl);
+        const typeLabel=TIKFINITY_WIDGET_TYPES.find(([value])=>value===eventType)?.[1] || 'Widget';
+        nextWidgets=[...widgets,{id:`tikfinity-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,7)}`,name:`TikFinity ${typeLabel}`,eventType,url:enteredTikfinityUrl,enabled:true}];
+      }
+    }
+    const patch = { platforms: { ...c, tikfinity: { ...tikfinity, url: socketUrl, reconnectSeconds: Number($('#pfTikRec').value), autoConnect: $('#pfTikAuto').checked, webWidgets:nextWidgets }, axelchat: { ...c.axelchat, url: $('#pfAxUrl').value, reconnectSeconds: Number($('#pfAxRec').value), autoConnect: $('#pfAxAuto').checked }, twitch: { ...c.twitch, channel: $('#pfTwChannel').value, autoConnect: $('#pfTwAuto').checked }, youtube: { ...c.youtube, liveChatId: $('#pfYtId').value, pollMs: Number($('#pfYtPoll').value), autoConnect: $('#pfYtAuto').checked } } };
     await saveAndSync(patch);
     if (youtubeKey) await api.youtubeSaveKey(youtubeKey);
-    await refresh(false); renderPlatformsModule(); toast('Plattformen gespeichert.');
+    await refresh(false); renderPlatformsModule(); toast(importedHttps ? 'HTTPS-Link erkannt und dauerhaft als TikFinity Browser-Widget gespeichert.' : 'Plattformen gespeichert.');
   };
+
+  $('#pfTikWidgetSave').onclick = async () => {
+    const name=$('#pfTikWidgetName').value.trim();
+    const url=$('#pfTikWidgetUrl').value.trim();
+    if (!name) return toast('Bitte einen Namen für das TikFinity-Widget eingeben.', true);
+    if (!isTikFinityHttpsUrl(url)) return toast('Bitte eine gültige HTTPS-Widget-URL von tikfinity.zerody.one/widget/ einfügen.', true);
+    if (!editingWidget && widgets.length >= 24) return toast('Maximal 24 TikFinity-Widgets sind möglich.', true);
+    const item={
+      id:editingWidget?.id || `tikfinity-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,7)}`,
+      name,
+      eventType:$('#pfTikWidgetType').value,
+      url,
+      enabled:$('#pfTikWidgetEnabled').checked
+    };
+    const next=editingWidget ? widgets.map((widget)=>widget.id===editingWidget.id ? item : widget) : [...widgets,item];
+    const previousEdit=S.tikfinityWidgetEdit;
+    S.tikfinityWidgetEdit=null;
+    try {
+      await saveAndSync({platforms:{...c,tikfinity:{...tikfinity,webWidgets:next}}}, editingWidget ? 'TikFinity HTTPS-Widget aktualisiert.' : 'TikFinity HTTPS-Widget dauerhaft gespeichert.');
+      renderPlatformsModule();
+    } catch (error) {
+      S.tikfinityWidgetEdit=previousEdit;
+      toast(error.message || 'TikFinity-Widget konnte nicht gespeichert werden.', true);
+    }
+  };
+  $('#pfTikWidgetCancel')?.addEventListener('click',()=>{S.tikfinityWidgetEdit=null;renderPlatformsModule();});
+  $$('[data-tf-edit]').forEach((button)=>{button.onclick=()=>{S.tikfinityWidgetEdit=button.dataset.tfEdit;renderPlatformsModule();};});
+  $$('[data-tf-open]').forEach((button)=>{button.onclick=async()=>{const result=await api.openOverlay(`/overlay/tikfinity/${encodeURIComponent(button.dataset.tfOpen)}`);if(!result.ok)toast(result.error,true);};});
+  $$('[data-tf-copy-obs]').forEach((button)=>{button.onclick=()=>copy(`${overlayBase()}/overlay/tikfinity/${encodeURIComponent(button.dataset.tfCopyObs)}`);});
+  $$('[data-tf-copy-direct]').forEach((button)=>{button.onclick=()=>{const widget=widgets.find((item)=>item.id===button.dataset.tfCopyDirect);if(widget)copy(widget.url);};});
+  $$('[data-tf-toggle]').forEach((button)=>{button.onclick=async()=>{const next=widgets.map((widget)=>widget.id===button.dataset.tfToggle ? {...widget,enabled:!widget.enabled} : widget);await saveAndSync({platforms:{...c,tikfinity:{...tikfinity,webWidgets:next}}},'TikFinity-Widget-Status gespeichert.');renderPlatformsModule();};});
+  $$('[data-tf-delete]').forEach((button)=>{button.onclick=async()=>{const widget=widgets.find((item)=>item.id===button.dataset.tfDelete);if(!widget || !confirm(`TikFinity-Widget „${widget.name}“ wirklich löschen?`))return;S.tikfinityWidgetEdit=null;await saveAndSync({platforms:{...c,tikfinity:{...tikfinity,webWidgets:widgets.filter((item)=>item.id!==widget.id)}}},'TikFinity-Widget gelöscht.');renderPlatformsModule();};});
 
   $$('[data-connect]').forEach((button) => { button.onclick = async () => { await $('#pfSave').onclick(); const result = await api.connectAdapter(button.dataset.connect); if (!result.ok) toast(result.error, true); else toast(`${button.dataset.connect} verbunden.`); await refresh(false); renderPlatformsModule(); }; });
   $$('[data-disconnect]').forEach((button) => { button.onclick = async () => { await api.disconnectAdapter(button.dataset.disconnect); await refresh(false); renderPlatformsModule(); }; });

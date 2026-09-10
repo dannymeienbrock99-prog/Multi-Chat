@@ -26,7 +26,7 @@ const cfg=items=>({enabled:true,items,globalMinGapSeconds:0,platformMinGapSecond
  pending.configure(cfg([make('pending',{targets:['local','twitch']})]));const run=pending.tick();await pending.tick();assert.equal(calls.length,1,'single-flight scheduler');pending.configure(cfg([]));release({ok:true});await run;assert.deepEqual(calls,['local'],'delete while sending must cancel remaining targets');pending.stop();
  assert.throws(()=>normalizeItem({id:'bad',messages:[],targets:['cng']}));assert.throws(()=>normalizeItem({id:'bad',messages:['a'],targets:['unknown']}));
  const migrated=migrateConfig({version:6,schemaVersion:3,autoBroadcast:{enabled:true,messages:['alter Text'],targets:['cng'],intervalSeconds:123,startDelaySeconds:12}});
- assert.equal(migrated.schemaVersion,4);assert.equal(migrated.autoBroadcast.items[0].messages[0],'alter Text');assert.equal(migrated.autoBroadcast.items[0].intervalSeconds,123);
+ assert.equal(migrated.schemaVersion,5);assert.equal(migrated.autoBroadcast.items[0].messages[0],'alter Text');assert.equal(migrated.autoBroadcast.items[0].intervalSeconds,123);
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'broadcast-'));
  try {
   const store=new ConfigStore(dir),service=new SettingsService({configStore:store});

@@ -30,12 +30,20 @@ const { validateMediaFile } = require('../src/core/alerts/media-validator.cjs');
     await new Promise((resolve) => blocker.close(resolve)); blocker = null;
 
     // Free port starts and health endpoint remains local-first.
+    configStore.merge({platforms:{tikfinity:{webWidgets:[{id:'follow-alert',name:'Neue Follower',eventType:'follow',url:'https://tikfinity.zerody.one/widget/follow?cid=runtime-test',enabled:true}]}}});
     const freeOverlay = new OverlayServer({ host:'127.0.0.1', port:17777, chatCore, configStore });
     const started = await freeOverlay.start();
     assert.equal(started.running, true);
     assert.equal(started.port, 17777);
     const health = await fetch('http://127.0.0.1:17777/health').then((r) => r.json());
     assert.equal(health.ok, true);
+    const widget = await fetch('http://127.0.0.1:17777/overlay/tikfinity/follow-alert',{redirect:'manual'});
+    assert.equal(widget.status,302);
+    assert.equal(widget.headers.get('location'),'https://tikfinity.zerody.one/widget/follow?cid=runtime-test');
+    const missingWidget = await fetch('http://127.0.0.1:17777/overlay/tikfinity/not-there',{redirect:'manual'});
+    assert.equal(missingWidget.status,404);
+    const logo = await fetch('http://127.0.0.1:17777/assets/platforms/tiktok.svg').then((r)=>r.text());
+    assert.match(logo,/<svg/);
     await freeOverlay.stop();
 
     // FFmpeg missing is DEGRADED, not a crash; detected FFmpeg is CONNECTED.

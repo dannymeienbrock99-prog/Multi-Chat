@@ -8,6 +8,10 @@ const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const { WebSocketServer } = require('ws');
+const { isTikFinityWidgetUrl } = require('./settings/schema.cjs');
+
+const PLATFORM_LOGO_DIR = path.join(__dirname, '..', 'assets', 'platforms');
+const PLATFORM_LOGOS = new Set(['tiktok.svg', 'twitch.svg', 'youtube.svg']);
 
 function esc(value) {
   return String(value ?? '')
@@ -57,6 +61,11 @@ class OverlayServer {
     };
   }
 
+  getTikFinityWidget(id) {
+    const widgets = this.configStore.get().platforms?.tikfinity?.webWidgets || [];
+    return widgets.find((widget) => widget?.enabled === true && widget.id === id && isTikFinityWidgetUrl(widget.url)) || null;
+  }
+
   chatHtml() {
     const design = this.configStore.get().chatDesign || {};
     const custom = design.customFontPath && fs.existsSync(design.customFontPath);
@@ -66,13 +75,13 @@ ${custom ? `@font-face{font-family:BattoCustom;src:url('/font/custom')}` : ''}
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}
 body{font-family:${font},Segoe UI,Arial;color:${esc(design.messageColor || '#fff')}}
 #chat{position:absolute;left:24px;right:24px;bottom:24px;display:flex;flex-direction:column;gap:10px}
-.msg{background:rgba(2,12,28,${Math.max(.15, Math.min(1, Number(design.opacity ?? .92)))});border:1px solid rgba(0,212,255,.32);border-radius:15px;padding:10px 14px;backdrop-filter:blur(12px);box-shadow:0 10px 30px rgba(0,0,0,.22);animation:in .22s ease-out}
+.msg{display:flex;align-items:center;gap:9px;background:rgba(2,12,28,${Math.max(.15, Math.min(1, Number(design.opacity ?? .92)))});border:1px solid rgba(0,212,255,.32);border-radius:15px;padding:10px 14px;backdrop-filter:blur(12px);box-shadow:0 10px 30px rgba(0,0,0,.22);animation:in .22s ease-out}
 .user{color:${esc(design.usernameColor || '#00d4ff')};font-weight:900;text-shadow:0 0 ${Number(design.glow || 10)}px currentColor}
-.text{font-size:${Number(design.fontSize || 20)}px;line-height:1.35;margin-left:9px}.platform{font-size:11px;text-transform:uppercase;opacity:.72;margin-right:8px}
+.text{font-size:${Number(design.fontSize || 20)}px;line-height:1.35}.platform{width:23px;height:23px;display:inline-grid;place-items:center;flex:0 0 23px}.platform img{display:block;width:22px;height:22px;object-fit:contain}.platform.internal{border-radius:6px;background:rgba(255,255,255,.12);font-size:13px}
 @keyframes in{from{opacity:0;transform:translateY(16px) scale(.98)}to{opacity:1;transform:none}}
 </style><script src="/overlay-client.js"></script></head><body><div id="chat"></div><script>
-const chat=document.getElementById('chat');const ws=connectBatto();
-function add(m){const row=document.createElement('div');row.className='msg';const p=document.createElement('span');p.className='platform';p.textContent=m.platform;const u=document.createElement('span');u.className='user';u.textContent=m.displayName||m.username;const t=document.createElement('span');t.className='text';t.textContent=m.message;row.append(p,u,t);chat.append(row);while(chat.children.length>8)chat.firstElementChild.remove();setTimeout(()=>row.remove(),${Math.max(2, Number(design.displaySeconds || 12)) * 1000})}
+const chat=document.getElementById('chat');const ws=connectBatto();const platformLogos={tiktok:'/assets/platforms/tiktok.svg',twitch:'/assets/platforms/twitch.svg',youtube:'/assets/platforms/youtube.svg',cng:'https://cng-plattform.com/manus-storage/favicon_e3fccd67.png'};const platformNames={tiktok:'TikTok',twitch:'Twitch',youtube:'YouTube',cng:'CNG',internal:'Lokal'};
+function add(m){const key=platformLogos[m.platform]?m.platform:'internal';const row=document.createElement('div');row.className='msg';const p=document.createElement('span');p.className='platform '+key;p.title=platformNames[key];p.setAttribute('aria-label',platformNames[key]);if(platformLogos[key]){const logo=document.createElement('img');logo.src=platformLogos[key];logo.alt=platformNames[key];p.append(logo)}else p.textContent='•';const u=document.createElement('span');u.className='user';u.textContent=m.displayName||m.username;const t=document.createElement('span');t.className='text';t.textContent=m.message;row.append(p,u,t);chat.append(row);while(chat.children.length>8)chat.firstElementChild.remove();setTimeout(()=>row.remove(),${Math.max(2, Number(design.displaySeconds || 12)) * 1000})}
 fetch('/state').then(r=>r.json()).then(s=>(s.messages||[]).slice(-5).forEach(add)).catch(()=>{});ws.onmessage=e=>{try{const x=JSON.parse(e.data);if(x.type==='chat')add(x.data)}catch{}};
 </script></body></html>`;
   }
@@ -122,6 +131,11 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent
     app.use((req,res,next)=>{if(!this.allowRequest(req))return res.sendStatus(403);res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');next();});
     app.use(express.json({ limit: '256kb' }));
     app.get('/overlay-client.js',(_req,res)=>res.type('application/javascript').send(OVERLAY_CLIENT));
+    app.get('/assets/platforms/:name', (req, res) => {
+      const name=String(req.params.name || '').toLowerCase();
+      if (!PLATFORM_LOGOS.has(name)) return res.sendStatus(404);
+      return res.type('image/svg+xml').sendFile(path.join(PLATFORM_LOGO_DIR, name));
+    });
 
     app.get('/health', (_req, res) => res.json({ ok: true, service: 'batto-obs-tool-2.1', ...this.getStatus() }));
     app.get('/state', (_req, res) => res.json({ messages: this.chatCore.getMessages().slice(-100) }));
@@ -131,6 +145,11 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent
     app.get('/overlay/follow', (_req, res) => res.type('html').send(this.eventHtml('follow')));
     app.get('/overlay/subs', (_req, res) => res.type('html').send(this.eventHtml('sub')));
     app.get('/overlay/media', (_req, res) => res.type('html').send(this.mediaHtml()));
+    app.get('/overlay/tikfinity/:id', (req, res) => {
+      const widget=this.getTikFinityWidget(String(req.params.id || ''));
+      if (!widget) return res.status(404).type('text/plain').send('TikFinity HTTPS-Widget nicht gefunden oder deaktiviert.');
+      return res.redirect(302, widget.url);
+    });
     app.get('/cohost/tiktok', (_req, res) => res.type('html').send(this.cohostHtml('tiktok')));
     app.get('/cohost/twitch', (_req, res) => res.type('html').send(this.cohostHtml('twitch')));
 
