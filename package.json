@@ -19,6 +19,7 @@
     "pretest:ui": "node scripts/restore-app.cjs",
     "test:ui": "node scripts/ui-contract.cjs",
     "test:core": "node scripts/core21.cjs",
+    "test:broadcast": "node scripts/broadcast-regression.cjs",
     "stress": "node scripts/stress.cjs",
     "soak": "node scripts/soak.cjs",
     "soak:quick": "node -e \"process.env.SOAK_MINUTES='1';require('./scripts/soak.cjs')\"",
