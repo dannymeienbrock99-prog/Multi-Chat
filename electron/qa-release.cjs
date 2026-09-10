@@ -44,8 +44,10 @@ module.exports=async function({win,run,waitFor,checks,dir,profile}){
   await run(`document.querySelector('#settingsAudio').scrollIntoView({block:'center'});`);await capture('05-TTS-Ausgabe');
   checks.push('Settings: both original logos render; speaker selection and volume share persisted TTS configuration');
   await run(`setView('platforms');`);
-  await waitFor(()=>run(`return !!document.querySelector('#pfTikWidgetUrl');`),'TikFinity HTTPS widget manager');
-  assert.equal(await run(`return S.config.platforms.tikfinity.webWidgets[0].url;`),'https://tikfinity.zerody.one/widget/chat?cid=676051');
+  await waitFor(()=>run(`return !!document.querySelector('#pfTikChatUrl');`),'TikFinity Chat URL field');
+  assert.equal(await run(`return S.config.platforms.tikfinity.webWidgets.length;`),0);
+  await run(`document.querySelector('#pfTikChatUrl').value='http://tikfinity.zerody.one/widget/chat?cid=676051';await document.querySelector('#pfTikChatSave').onclick();`);
+  await waitFor(()=>run(`return S.config.platforms.tikfinity.webWidgets.some(w=>w.url==='https://tikfinity.zerody.one/widget/chat?cid=676051');`),'TikFinity Chat URL saved');
   await run(`document.querySelector('#pfTikUrl').value='https://tikfinity.zerody.one/widget/follow?cid=qa-installed';await document.querySelector('#pfSave').onclick();`);
   await waitFor(()=>run(`return S.config.platforms.tikfinity.webWidgets.some(w=>w.url==='https://tikfinity.zerody.one/widget/follow?cid=qa-installed');`),'HTTPS URL imported from WebSocket field');
   assert.match(await run(`return S.config.platforms.tikfinity.url;`),/^wss?:\/\//);
@@ -80,7 +82,8 @@ module.exports=async function({win,run,waitFor,checks,dir,profile}){
   assert.deepEqual(await run('return window.__qaErrors;'),[]);
   const saved=JSON.parse(fs.readFileSync(path.join(profile,'Batto-OBS-Tool/settings.json'),'utf8'));
   assert.equal(saved.schemaVersion,5);assert.equal(saved.autoBroadcast.items.length,1);assert.equal(saved.autoBroadcast.items[0].name,'QA Broadcast B');assert.equal(saved.tts.volume,.37);
-  fs.writeFileSync(path.join(dir,'resume-expectations.json'),JSON.stringify({schemaVersion:5,broadcasts:1,broadcastName:'QA Broadcast B',volume:.37}));
+  const tikfinityChatUrl='https://tikfinity.zerody.one/widget/chat?cid=676051';assert.equal(saved.platforms.tikfinity.webWidgets.some(widget=>widget.url===tikfinityChatUrl),true);
+  fs.writeFileSync(path.join(dir,'resume-expectations.json'),JSON.stringify({schemaVersion:5,broadcasts:1,broadcastName:'QA Broadcast B',volume:.37,tikfinityChatUrl}));
   await run(`setView('start');`);
   checks.push('No renderer errors; persisted schema-5 settings ready for independent restart test');
 };

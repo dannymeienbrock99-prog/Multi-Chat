@@ -5,7 +5,7 @@ function apply(root=path.resolve(__dirname,'..')){
   const p=x=>path.join(root,x);
   const configSource=fs.readFileSync(p('src/core/config-store.cjs'),'utf8');
   const rendererSource=fs.readFileSync(p('src/renderer/app.js'),'utf8');
-  if(configSource.includes('DEFAULT_TIKFINITY_WIDGETS') && rendererSource.includes('TikFinity HTTPS-Browser-Widgets')){
+  if(configSource.includes('DEFAULT_TIKFINITY_WIDGETS') && rendererSource.includes('pfTikChatUrl')){
     console.log('Native TikFinity HTTPS widget integration already present.');
     return;
   }

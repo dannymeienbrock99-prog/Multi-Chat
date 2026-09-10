@@ -19,6 +19,7 @@ const checks = [
   ['Auto-Broadcast', /renderBroadcastModule|autoBroadcast/],
   ['CNG Einstellungen', /cngSaveChatUrl|cngObsChatUrl|ghostChatUrl/],
   ['TikFinity HTTPS-Widgets', /TikFinity HTTPS-Browser-Widgets|webWidgets/],
+  ['TikFinity Chat-URL-Feld', /pfTikChatUrl|TikFinity Chat-HTTP\/HTTPS/],
   ['TikFinity stabile OBS-URL', /overlay\/tikfinity\//],
   ['Originale Plattform-Logos', /assets\/platforms\/tiktok\.svg|platformIcon\('tiktok'\)/],
   ['Synchronisierte Einstellungen', /syncEnabled|sync\.modules|config:changed/],

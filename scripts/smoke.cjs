@@ -11,8 +11,8 @@ const cfg = structuredClone(DEFAULT_CONFIG);
 assert.equal(cfg.http.port, 17777);
 assert.equal(cfg.obs.url, 'ws://127.0.0.1:4455');
 assert.equal(cfg.multiChat.maxMessages, 500);
-assert.equal(cfg.platforms.tikfinity.webWidgets[0].url, 'https://tikfinity.zerody.one/widget/chat?cid=676051');
-assert.equal(isTikFinityWidgetUrl(cfg.platforms.tikfinity.webWidgets[0].url), true);
+assert.deepEqual(cfg.platforms.tikfinity.webWidgets, []);
+assert.equal(isTikFinityWidgetUrl('https://tikfinity.zerody.one/widget/chat?cid=676051'), true);
 assert.equal(isTikFinityWidgetUrl('https://example.com/widget/chat?cid=676051'), false);
 assert.equal(validateConfig(cfg).ok, true);
 
