@@ -20,6 +20,6 @@
 .settings-family figure {margin:0;text-align:center;min-width:0}
 .settings-family img {display:block;width:100%;height:330px;object-fit:contain;background:#050505;border:1px solid rgba(217,170,87,.5);border-radius:12px;box-shadow:0 12px 34px #0008}
 .settings-family figcaption {color:#e8c47d;padding-top:10px;font-weight:700}
-body.detached .chat-card {background-image:linear-gradient(90deg,rgba(5,5,6,.93),rgba(5,5,6,.58)),url('../assets/source/rose-original.jpeg')!important;background-size:auto,contain!important;background-repeat:no-repeat!important;background-position:center,right center!important}
+body.chat-background-active .chat-card {background-image:var(--chat-background-overlay),var(--chat-background-image)!important;background-size:auto,var(--chat-background-fit,contain)!important;background-repeat:no-repeat,no-repeat!important;background-position:center,var(--chat-background-position,center)!important}
 body.detached .topbar,body.detached .statusbar {border-color:rgba(217,170,87,.55)!important}
 @media(max-width:950px){.settings-family-grid{grid-template-columns:1fr}.settings-family img{height:280px}}

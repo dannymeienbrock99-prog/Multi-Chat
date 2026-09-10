@@ -11,10 +11,14 @@ const cfg = structuredClone(DEFAULT_CONFIG);
 assert.equal(cfg.http.port, 17777);
 assert.equal(cfg.obs.url, 'ws://127.0.0.1:4455');
 assert.equal(cfg.multiChat.maxMessages, 500);
+assert.deepEqual(cfg.appearance.chatBackground, { enabled:true, mode:'preset', customPath:'', customName:'', fit:'contain', position:'center', darkness:.82, showInMain:false });
 assert.deepEqual(cfg.platforms.tikfinity.webWidgets, []);
 assert.equal(isTikFinityWidgetUrl('https://tikfinity.zerody.one/widget/chat?cid=676051'), true);
 assert.equal(isTikFinityWidgetUrl('https://example.com/widget/chat?cid=676051'), false);
 assert.equal(validateConfig(cfg).ok, true);
+const invalidChatBackground = structuredClone(cfg);
+invalidChatBackground.appearance.chatBackground.mode = 'remote';
+assert.equal(validateConfig(invalidChatBackground).ok, false);
 
 const migrated = migrateConfig({ version: 5, http: { port: 8787 }, multiChat: { maxMessages: 5000 }, backup: { keep: 10 } });
 assert.equal(migrated.version, 7);

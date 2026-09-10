@@ -8,6 +8,7 @@ const { ChatCore } = require('../src/core/chat-core.cjs');
 const { OverlayServer } = require('../src/core/overlay-server.cjs');
 const { FFmpegService } = require('../src/core/media/ffmpeg-service.cjs');
 const { validateMediaFile } = require('../src/core/alerts/media-validator.cjs');
+const { validateChatBackgroundFile } = require('../src/core/media/chat-background.cjs');
 
 (async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'batto-runtime21-'));
@@ -57,6 +58,9 @@ const { validateMediaFile } = require('../src/core/alerts/media-validator.cjs');
     fs.writeFileSync(fakePng,'not a png');
     const validation = validateMediaFile(fakePng);
     assert.equal(validation.ok, false);
+    assert.equal(validateChatBackgroundFile(fakePng).ok, false);
+    const shippedChatImage = path.join(__dirname,'..','src','assets','source','crazy-batto-chat-default.jpg');
+    assert.equal(validateChatBackgroundFile(shippedChatImage).ok, true);
 
     console.log('Batto OBS Tool 2.1 runtime integration: OK');
   } finally {

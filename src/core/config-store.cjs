@@ -7,12 +7,22 @@ const { assertValidConfig, validateConfig, isTikFinityWidgetUrl } = require('./s
 const CURRENT_VERSION = 7;
 const CURRENT_SCHEMA_VERSION = 5;
 const DEFAULT_TIKFINITY_WIDGETS = [];
+const DEFAULT_CHAT_BACKGROUND = {
+  enabled:true,
+  mode:'preset',
+  customPath:'',
+  customName:'',
+  fit:'contain',
+  position:'center',
+  darkness:.82,
+  showInMain:false
+};
 
 const DEFAULT_CONFIG = {
   version: CURRENT_VERSION,
   schemaVersion: CURRENT_SCHEMA_VERSION,
   general: { displayName:'Crazy_Batto', language:'de', autoSave:false, startMinimized:false, startView:'start', minimizeToTray:false, updateBehavior:'manual' },
-  appearance: { uiScale:1, panelOpacity:.9, brightness:1, compact:false, programBackground:true, backgroundDarkness:.28, theme:'marble-gold' },
+  appearance: { uiScale:1, panelOpacity:.9, brightness:1, compact:false, programBackground:true, backgroundDarkness:.28, theme:'marble-gold', chatBackground:DEFAULT_CHAT_BACKGROUND },
   sync: { enabled:true, debounceMs:250, modules:{ platforms:true, commands:true, autoBroadcast:true, events:true, mediaPools:true, tts:true, cng:true, cohost:true, overlays:true, obs:true, alerts:true } },
   multiChat: { enabled:true, defaultTab:'all', showTimestamp:true, showPlatform:true, showBadges:true, autoScroll:true, maxMessages:500, fontFamily:'Segoe UI', fontSize:14 },
   moderation: {
@@ -262,4 +272,4 @@ class ConfigStore {
   importFrom(filePath) { const candidate=migrateConfig(this.readJson(filePath)); return this.commit(candidate); }
 }
 
-module.exports={ConfigStore,DEFAULT_CONFIG,CURRENT_VERSION,CURRENT_SCHEMA_VERSION,DEFAULT_TIKFINITY_WIDGETS,deepMerge,migrateConfig,migrateSchema1To2,migrateSchema2To3,migrateSchema4To5,stripUnknown};
+module.exports={ConfigStore,DEFAULT_CONFIG,CURRENT_VERSION,CURRENT_SCHEMA_VERSION,DEFAULT_TIKFINITY_WIDGETS,DEFAULT_CHAT_BACKGROUND,deepMerge,migrateConfig,migrateSchema1To2,migrateSchema2To3,migrateSchema4To5,stripUnknown};

@@ -1,5 +1,5 @@
 'use strict';
-const {app,BrowserWindow}=require('electron');
+const {app,BrowserWindow,dialog}=require('electron');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),crypto=require('node:crypto');
 module.exports=async function({win,run,waitFor,checks,dir,profile}){
   assert.equal(app.getVersion(),'2.1.3');
@@ -39,6 +39,32 @@ module.exports=async function({win,run,waitFor,checks,dir,profile}){
   await waitFor(()=>run(`return !!document.querySelector('#settingsTtsVolume');`),'Shared audio settings');
   await run(`document.querySelector('#settingsTtsVolume').value=37;await document.querySelector('#settingsTtsSave').onclick();`);
   assert.equal((await run('return await window.batto.getState();')).config.tts.volume,.37);
+  await waitFor(()=>run(`return !!document.querySelector('#stChatImageUpload')&&!!document.querySelector('#chatBackgroundPreview');`),'Chat background settings');
+  assert.equal((await run('return await window.batto.getState();')).config.appearance.chatBackground.mode,'preset');
+  assert.match(await run(`return getComputedStyle(document.querySelector('#chatBackgroundPreview')).backgroundImage;`),/crazy-batto-chat-default/);
+  const chatFixture=path.join(__dirname,'../src/assets/source/crazy-batto-chat-default.jpg');
+  const originalOpenDialog=dialog.showOpenDialog;
+  const uploadChatFixture=async()=>{
+    dialog.showOpenDialog=async()=>({canceled:false,filePaths:[chatFixture]});
+    try { await run(`await document.querySelector('#stChatImageUpload').onclick();`); }
+    finally { dialog.showOpenDialog=originalOpenDialog; }
+    return (await run('return await window.batto.getState();')).config.appearance.chatBackground.customPath;
+  };
+  const firstChatImage=await uploadChatFixture();
+  assert.equal(fs.existsSync(firstChatImage),true);
+  await run(`window.confirm=()=>true;await document.querySelector('#stChatImagePreset').onclick();`);
+  await waitFor(()=>run(`return S.config.appearance.chatBackground.mode==='preset';`),'Restore bundled chat background');
+  assert.equal(fs.existsSync(firstChatImage),false);
+  const customChatImage=await uploadChatFixture();
+  await waitFor(()=>run(`return S.config.appearance.chatBackground.mode==='custom';`),'Custom chat background persisted');
+  assert.equal(fs.existsSync(customChatImage),true);
+  assert.equal(await run(`return await new Promise(resolve=>{const image=new Image();image.onload=()=>resolve(image.naturalWidth===1080&&image.naturalHeight===1920);image.onerror=()=>resolve(false);image.src=S.assets.chatBackground.url;});`),true);
+  await run(`document.querySelector('#stChatImageMain').checked=true;document.querySelector('#stChatImageFit').value='cover';document.querySelector('#stChatImagePosition').value='right center';document.querySelector('#stChatImageDarkness').value=63;await document.querySelector('#stChatImageSave').onclick();`);
+  await waitFor(()=>run(`const b=S.config.appearance.chatBackground;return b.showInMain&&b.fit==='cover'&&b.position==='right center'&&b.darkness===.63;`),'Chat background controls persisted');
+  assert.equal(await run(`return document.body.classList.contains('chat-background-active');`),true);
+  assert.match(await run(`return getComputedStyle(document.querySelector('.chat-card')).backgroundImage;`),/chat-background-/);
+  await run(`document.querySelector('#chatBackgroundSettings').scrollIntoView({block:'start'});`);await capture('04-Chatfenster-Bild');
+  checks.push('Chat image: bundled Crazy_Batto preset, native upload, reset cleanup, preview, fit, position, darkness and main-window display');
   await waitFor(()=>run(`return [...document.querySelectorAll('#familyBranding img')].every(i=>i.complete&&i.naturalWidth>0);`),'Sarah and Michelle decoded');
   await run(`document.querySelector('#familyBranding').scrollIntoView({block:'start'});`);await capture('04-Einstellungen-Logos');
   await run(`document.querySelector('#settingsAudio').scrollIntoView({block:'center'});`);await capture('05-TTS-Ausgabe');
@@ -68,13 +94,14 @@ module.exports=async function({win,run,waitFor,checks,dir,profile}){
   const detached=await waitFor(()=>BrowserWindow.getAllWindows().find(w=>w!==win),'Detached window');
   const other=code=>detached.webContents.executeJavaScript(`(async()=>{${code}})()`,true);
   await waitFor(()=>other(`return document.body.classList.contains('detached')&&typeof S!=='undefined'&&!!S.config;`),'Detached renderer');
-  assert.match(await other(`return getComputedStyle(document.querySelector('.chat-card')).backgroundImage;`),/rose-original/);
+  assert.match(await other(`return getComputedStyle(document.querySelector('.chat-card')).backgroundImage;`),/chat-background-/);
+  assert.match(await other(`return getComputedStyle(document.querySelector('.chat-card')).backgroundSize;`),/cover/);
   assert.equal(await other('return S.config.tts.volume;'),.37);
   await run(`await window.batto.sendMessage({platform:'local',text:'QA SHARED WINDOW'});`);
   await waitFor(()=>other(`return document.querySelector('#chatList').textContent.includes('QA SHARED WINDOW');`),'Shared chat history');
   fs.writeFileSync(path.join(dir,'06-Abgetrennter-Chat.png'),(await detached.webContents.capturePage()).toPNG());
   await capture('02-Multi-Chat');
-  checks.push('Detached rose background, shared live history and settings; no second scheduler');
+  checks.push('Detached custom chat background, shared live history and settings; no second scheduler');
   detached.close();
   assert.equal((await fetch('http://127.0.0.1:17777/health')).status,200);
   assert.equal((await fetch('http://127.0.0.1:17777/state',{headers:{Origin:'https://untrusted.example'}})).status,403);
@@ -82,8 +109,9 @@ module.exports=async function({win,run,waitFor,checks,dir,profile}){
   assert.deepEqual(await run('return window.__qaErrors;'),[]);
   const saved=JSON.parse(fs.readFileSync(path.join(profile,'Batto-OBS-Tool/settings.json'),'utf8'));
   assert.equal(saved.schemaVersion,5);assert.equal(saved.autoBroadcast.items.length,1);assert.equal(saved.autoBroadcast.items[0].name,'QA Broadcast B');assert.equal(saved.tts.volume,.37);
+  assert.equal(saved.appearance.chatBackground.mode,'custom');assert.equal(saved.appearance.chatBackground.customName,'crazy-batto-chat-default.jpg');assert.equal(saved.appearance.chatBackground.fit,'cover');assert.equal(saved.appearance.chatBackground.darkness,.63);assert.equal(fs.existsSync(saved.appearance.chatBackground.customPath),true);
   const tikfinityChatUrl='https://tikfinity.zerody.one/widget/chat?cid=676051';assert.equal(saved.platforms.tikfinity.webWidgets.some(widget=>widget.url===tikfinityChatUrl),true);
-  fs.writeFileSync(path.join(dir,'resume-expectations.json'),JSON.stringify({schemaVersion:5,broadcasts:1,broadcastName:'QA Broadcast B',volume:.37,tikfinityChatUrl}));
+  fs.writeFileSync(path.join(dir,'resume-expectations.json'),JSON.stringify({schemaVersion:5,broadcasts:1,broadcastName:'QA Broadcast B',volume:.37,tikfinityChatUrl,chatBackgroundName:'crazy-batto-chat-default.jpg',chatBackgroundPath:saved.appearance.chatBackground.customPath}));
   await run(`setView('start');`);
   checks.push('No renderer errors; persisted schema-5 settings ready for independent restart test');
 };

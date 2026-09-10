@@ -1,5 +1,5 @@
 // RELEASE_213_COMPLETE
-const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage, clipboard, nativeImage } = require('electron');
 const { BroadcastService } = require('../src/core/broadcast/service.cjs');
 const fs = require('fs');
 const path = require('path');
@@ -22,6 +22,7 @@ const { Logger, redact } = require('../src/core/logging/logger.cjs');
 const { HealthService } = require('../src/core/health/health-service.cjs');
 const { AuditStore } = require('../src/core/storage/audit-store.cjs');
 const { FFmpegService } = require('../src/core/media/ffmpeg-service.cjs');
+const { validateChatBackgroundFile, isPathInside } = require('../src/core/media/chat-background.cjs');
 const { AxelChatAdapter } = require('../src/adapters/axelchat.cjs');
 const { TikFinityAdapter } = require('../src/adapters/tikfinity.cjs');
 const { TwitchAdapter } = require('../src/adapters/twitch.cjs');
@@ -58,6 +59,7 @@ const SECRET_REFS = {
   discord: 'discord-webhook',
   cng: 'cng-obs-chat-url'
 };
+const CHAT_BACKGROUND_PRESET_URL = '../assets/source/crazy-batto-chat-default.jpg';
 
 function send(channel, payload) {
   for (const win of [mainWindow, detachedWindow]) {
@@ -181,6 +183,11 @@ function assetStatus() {
   }
   const font = cfg.chatDesign?.customFontPath;
   if (font && !fs.existsSync(font)) missing.push({ type: 'font', name: path.basename(font) });
+  const chatBackground = cfg.appearance?.chatBackground;
+  if (chatBackground?.mode === 'custom') {
+    const validation = validateChatBackgroundFile(chatBackground.customPath);
+    if (!validation.ok) missing.push({ type:'chat-background', name:chatBackground.customName || 'Chatfenster-Bild', error:validation.error });
+  }
   return { missing: missing.length, invalid: 0, items: missing.slice(0, 100) };
 }
 
@@ -334,6 +341,22 @@ async function synthesizeTts(payload = {}) {
 
 function currentConfig() { return configStore.get(); }
 
+function chatBackgroundAsset(cfg = currentConfig()) {
+  const selected = cfg.appearance?.chatBackground || {};
+  if (selected.mode === 'custom') {
+    const validation = validateChatBackgroundFile(selected.customPath);
+    if (validation.ok) return { mode:'custom', url:pathToFileURL(validation.path).href, name:selected.customName || path.basename(validation.path), missing:false };
+    return { mode:'preset', url:CHAT_BACKGROUND_PRESET_URL, name:'Crazy_Batto Social-Media-Motiv', missing:true, error:validation.error };
+  }
+  return { mode:'preset', url:CHAT_BACKGROUND_PRESET_URL, name:'Crazy_Batto Social-Media-Motiv', missing:false };
+}
+
+function removeManagedChatBackground(filePath) {
+  try {
+    if (isPathInside(filePath, configStore.imageDir) && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch {}
+}
+
 function applyConfig(next, patch = {}) {
   chatCore.setConfig(next);
   for (const name of ['axelchat', 'tikfinity', 'twitch', 'youtube']) {
@@ -469,6 +492,7 @@ function registerIpc() {
     moderationHistory: chatCore.getModerationHistory(), overlay: overlayServer.getStatus(), adapters: connectorManager.statuses(), obs: obs.getStatus(),
     eventCore: eventCore.getMetrics(), ffmpeg: ffmpeg.getStatus(), database: auditStore.getStatus(), health: healthService.getStatus(),
     settings: { dirty: settingsService.isDirty(), validation: validateConfig(settingsService.getDraft()) },
+    assets: { chatBackground:chatBackgroundAsset() },
     secrets: { obsPassword: secretsService.has(SECRET_REFS.obs), youtubeApiKey: secretsService.has(SECRET_REFS.youtube), discordWebhook: secretsService.has(SECRET_REFS.discord), cngObsChatUrl: secretsService.has(SECRET_REFS.cng) }
   }));
 
@@ -565,6 +589,49 @@ function registerIpc() {
   ipcMain.handle('tts:listVoices', async () => { try { return { ok: true, voices: await listTtsVoices() }; } catch (error) { return { ok: false, error: error.message, voices: [] }; } });
   ipcMain.handle('tts:synthesize', async (_event, payload) => { try { return await synthesizeTts(payload); } catch (error) { return { ok: false, error: error.message }; } });
   ipcMain.handle('tts:cleanup', (_event, filePath) => { try { const resolved = path.resolve(String(filePath || '')); if (resolved.startsWith(path.resolve(configStore.ttsDir)+path.sep) && fs.existsSync(resolved)) fs.unlinkSync(resolved); return { ok: true }; } catch (error) { return { ok: false, error: error.message }; } });
+
+  ipcMain.handle('dialog:chatBackground', async () => {
+    const result = await dialog.showOpenDialog({ title:'Eigenes Chatfenster-Bild auswählen', properties:['openFile'], filters:[{ name:'Bilder', extensions:['png','jpg','jpeg','webp'] }] });
+    if (result.canceled || !result.filePaths[0]) return { ok:false, canceled:true };
+    const validation = validateChatBackgroundFile(result.filePaths[0]);
+    if (!validation.ok) return validation;
+    const decoded = nativeImage.createFromPath(validation.path);
+    const size = decoded.getSize();
+    if (decoded.isEmpty() || size.width < 1 || size.height < 1) return { ok:false, error:'Das ausgewählte Bild konnte nicht gelesen werden.' };
+    if (size.width > 12000 || size.height > 12000) return { ok:false, error:'Das Chatbild darf höchstens 12000 × 12000 Pixel groß sein.' };
+    const destination = path.join(configStore.imageDir, `chat-background-${Date.now()}-${crypto.randomUUID().slice(0,8)}${validation.ext}`);
+    try {
+      fs.copyFileSync(validation.path, destination);
+      const copied = validateChatBackgroundFile(destination);
+      if (!copied.ok) throw new Error(copied.error);
+      const cfg = currentConfig();
+      const previousPath = cfg.appearance?.chatBackground?.customPath;
+      const next = configStore.merge({ appearance:{ chatBackground:{ ...(cfg.appearance?.chatBackground || {}), enabled:true, mode:'custom', customPath:destination, customName:path.basename(validation.path).slice(0,260) } } });
+      settingsService.discard();
+      applyConfig(next, { appearance:next.appearance });
+      const asset = chatBackgroundAsset(next);
+      send('chat-background:changed', { config:next, asset });
+      if (previousPath && previousPath !== destination) removeManagedChatBackground(previousPath);
+      return { ok:true, config:next, asset, width:size.width, height:size.height };
+    } catch (error) {
+      removeManagedChatBackground(destination);
+      return { ok:false, error:error.message };
+    }
+  });
+
+  ipcMain.handle('chat-background:reset', () => {
+    try {
+      const cfg = currentConfig();
+      const previousPath = cfg.appearance?.chatBackground?.customPath;
+      const next = configStore.merge({ appearance:{ chatBackground:{ ...(cfg.appearance?.chatBackground || {}), enabled:true, mode:'preset', customPath:'', customName:'' } } });
+      settingsService.discard();
+      applyConfig(next, { appearance:next.appearance });
+      const asset = chatBackgroundAsset(next);
+      send('chat-background:changed', { config:next, asset });
+      removeManagedChatBackground(previousPath);
+      return { ok:true, config:next, asset };
+    } catch (error) { return { ok:false, error:error.message }; }
+  });
 
   ipcMain.handle('dialog:font', async () => {
     const result = await dialog.showOpenDialog({ title: 'Eigene Schrift auswählen', properties: ['openFile'], filters: [{ name: 'Fonts', extensions: ['ttf','otf','woff','woff2'] }] });

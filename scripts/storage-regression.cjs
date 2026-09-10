@@ -6,6 +6,7 @@ const path = require('node:path');
 const { atomicWrite } = require('../src/core/storage/atomic-file.cjs');
 const { ConfigStore } = require('../src/core/config-store.cjs');
 const { SecretsService } = require('../src/core/settings/secrets-service.cjs');
+const { validateChatBackgroundFile, isPathInside } = require('../src/core/media/chat-background.cjs');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'batto-storage-'));
 try {
   const store = new ConfigStore(dir);
@@ -14,6 +15,15 @@ try {
   const widgets=[{id:'follow-alert',name:'Neue Follower',eventType:'follow',url:'https://tikfinity.zerody.one/widget/follow?cid=storage-test',enabled:true}];
   store.merge({platforms:{tikfinity:{webWidgets:widgets}}});
   assert.deepEqual(new ConfigStore(dir).get().platforms.tikfinity.webWidgets,widgets);
+  const chatImage=path.join(__dirname,'..','src','assets','source','crazy-batto-chat-default.jpg');
+  assert.equal(validateChatBackgroundFile(chatImage).ok,true);
+  assert.equal(isPathInside(path.join(store.imageDir,'chat-background.jpg'),store.imageDir),true);
+  assert.equal(isPathInside(path.join(store.imageDir,'..','outside.jpg'),store.imageDir),false);
+  store.merge({appearance:{chatBackground:{enabled:true,mode:'custom',customPath:chatImage,customName:'QA Chat.jpg',fit:'cover',position:'right center',darkness:.63,showInMain:true}}});
+  const persistedChatImage=new ConfigStore(dir).get().appearance.chatBackground;
+  assert.equal(persistedChatImage.customName,'QA Chat.jpg');
+  assert.equal(persistedChatImage.fit,'cover');
+  assert.equal(persistedChatImage.showInMain,true);
   const file = path.join(dir, 'atomic.json');
   atomicWrite(file, 'original');
   const originalFsync = fs.fsyncSync;
