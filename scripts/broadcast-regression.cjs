@@ -1,0 +1,41 @@
+'use strict';
+const assert=require('node:assert/strict');const fs=require('node:fs');const os=require('node:os');const path=require('node:path');
+const {BroadcastScheduler,normalizeItem}=require('../src/core/broadcast/scheduler.cjs');
+const {ConfigStore,DEFAULT_CONFIG,migrateConfig}=require('../src/core/config-store.cjs');
+const {SettingsService}=require('../src/core/settings/settings-service.cjs');
+const make=(id,extra={})=>normalizeItem({id,name:id,enabled:true,messages:['eins','zwei'],targets:['local'],intervalSeconds:30,startDelaySeconds:0,...extra});
+const cfg=items=>({enabled:true,items,globalMinGapSeconds:0,platformMinGapSeconds:0});
+(async()=>{
+ let clock=0;const sent=[];
+ const s=new BroadcastScheduler({now:()=>clock,send:async(p,t)=>{sent.push([p,t]);return{ok:true,mode:'local'}}});
+ s.configure(cfg([make('a'),make('b',{intervalSeconds:60})]));await s.tick();assert.equal(sent.length,2);
+ s.configure(cfg([make('a'),make('b',{intervalSeconds:60})]));await s.tick();assert.equal(sent.length,2,'unchanged settings must not reset a timer');
+ clock=30000;await s.tick();assert.equal(sent.length,3);assert.equal(sent[2][1],'zwei');
+ s.configure(cfg([make('b',{intervalSeconds:60})]));clock=60000;await s.tick();assert.equal(sent.length,4,'deleted schedule must never fire again');
+ s.configure({...cfg([make('b')]),enabled:false});clock=90000;await s.tick();assert.equal(sent.length,4);
+ s.stop();
+ let live=false;clock=0;let count=0;
+ const gated=new BroadcastScheduler({now:()=>clock,isLive:()=>live,send:async()=>{count++;return{ok:true}}});
+ gated.configure(cfg([make('conditions',{onlyWhenLive:true,onlyWhenChatActive:true})]));await gated.tick();assert.equal(count,0);
+ live=true;clock=1000;await gated.tick();assert.equal(count,0);gated.noteChat('local');clock=2000;await gated.tick();assert.equal(count,1);gated.stop();
+ clock=0;const targets=[];let fails=0;
+ const retry=new BroadcastScheduler({now:()=>clock,send:async(p)=>{targets.push(p);if(p==='twitch'&&fails++===0)throw new Error('offline');return{ok:true}}});
+ retry.configure(cfg([make('retry',{targets:['local','twitch'],retryOnError:true,retryDelaySeconds:5})]));await retry.tick();assert.deepEqual(targets,['local','twitch']);clock=5000;await retry.tick();assert.deepEqual(targets,['local','twitch','twitch'],'retry must not repeat successful targets');retry.stop();
+ let release;clock=0;const calls=[];
+ const pending=new BroadcastScheduler({now:()=>clock,send:(p)=>{calls.push(p);return new Promise(r=>{release=r})}});
+ pending.configure(cfg([make('pending',{targets:['local','twitch']})]));const run=pending.tick();await pending.tick();assert.equal(calls.length,1,'single-flight scheduler');pending.configure(cfg([]));release({ok:true});await run;assert.deepEqual(calls,['local'],'delete while sending must cancel remaining targets');pending.stop();
+ assert.throws(()=>normalizeItem({id:'bad',messages:[],targets:['cng']}));assert.throws(()=>normalizeItem({id:'bad',messages:['a'],targets:['unknown']}));
+ const migrated=migrateConfig({version:6,schemaVersion:3,autoBroadcast:{enabled:true,messages:['alter Text'],targets:['cng'],intervalSeconds:123,startDelaySeconds:12}});
+ assert.equal(migrated.schemaVersion,6);assert.equal(migrated.autoBroadcast.items[0].messages[0],'alter Text');assert.equal(migrated.autoBroadcast.items[0].intervalSeconds,123);
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'broadcast-'));
+ try {
+  const store=new ConfigStore(dir),service=new SettingsService({configStore:store});
+  service.patch({appearance:{backgroundDarkness:.4}});
+  store.merge({autoBroadcast:{items:[make('persist')]},windows:{mainBounds:{x:33,y:44,width:1400,height:900}}});
+  assert.equal(service.apply().ok,true);assert.equal(store.get().autoBroadcast.items.length,1);assert.equal(store.get().windows.mainBounds.x,33,'settings Apply must preserve unrelated newer changes');
+  const reloaded=new ConfigStore(dir);assert.equal(reloaded.get().autoBroadcast.items[0].id,'persist');
+  store.merge({autoBroadcast:{items:[]}});assert.equal(new ConfigStore(dir).get().autoBroadcast.items.length,0,'deletion must persist across restart');
+  assert.equal(DEFAULT_CONFIG.general.startView,'start');
+ }finally{fs.rmSync(dir,{recursive:true,force:true});}
+ console.log('Broadcast regression: independent schedules, sync, pause/delete, live/activity, retries, single flight, validation, migration and restart: OK');
+})().catch(err=>{console.error(err);process.exitCode=1});

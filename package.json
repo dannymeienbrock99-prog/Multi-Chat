@@ -1,0 +1,84 @@
+{
+  "name": "batto-obs-tool",
+  "version": "2.1.5",
+  "description": "Batto OBS Tool 2.1 – modular local-first Multi-Chat, Event Core, OBS, Overlay and Media platform",
+  "main": "electron/bootstrap.cjs",
+  "author": "Crazy_Batto",
+  "license": "SEE LICENSE IN build/license_de.txt",
+  "private": true,
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "scripts": {
+    "prestart": "node scripts/restore-app.cjs && electron scripts/prepare-icons.cjs",
+    "start": "electron .",
+    "predev": "node scripts/restore-app.cjs && electron scripts/prepare-icons.cjs",
+    "dev": "electron .",
+    "precheck": "node scripts/restore-app.cjs",
+    "check": "node scripts/check.cjs",
+    "presmoke": "node scripts/restore-app.cjs",
+    "smoke": "node scripts/smoke.cjs",
+    "pretest:ui": "node scripts/restore-app.cjs",
+    "test:ui": "node scripts/ui-contract.cjs",
+    "test:core": "node scripts/core21.cjs",
+    "test:broadcast": "node scripts/broadcast-regression.cjs",
+    "stress": "node scripts/stress.cjs",
+    "soak": "node scripts/soak.cjs",
+    "soak:quick": "node -e \"process.env.SOAK_MINUTES='1';require('./scripts/soak.cjs')\"",
+    "prepack:win": "node scripts/restore-app.cjs && electron scripts/prepare-icons.cjs && node scripts/prepare-installer.cjs && node scripts/patch-nsis.cjs",
+    "pack:win": "electron-builder --win nsis --publish never",
+    "test:storage": "node scripts/storage-regression.cjs",
+    "test:runtime": "node scripts/runtime21.cjs",
+    "test:release": "node scripts/release-regression.cjs",
+    "test:installer": "node scripts/installer-regression.cjs"
+  },
+  "dependencies": {
+    "express": "5.1.0",
+    "obs-websocket-js": "5.0.6",
+    "ws": "8.18.3"
+  },
+  "devDependencies": {
+    "electron": "38.8.6",
+    "electron-builder": "26.0.12"
+  },
+  "build": {
+    "appId": "de.crazybatto.battoobstool",
+    "productName": "Batto OBS Tool 2.1",
+    "artifactName": "Batto-OBS-Tool-2.1-Setup-${version}.${ext}",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "src/**/*",
+      "scripts/**/*",
+      "package.json",
+      "README.md"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "src/assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "include": "build/installer.nsh",
+      "license": "build/license_de.txt",
+      "installerLanguages": [
+        "de_DE"
+      ],
+      "language": "1031",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Batto OBS Tool 2.1",
+      "runAfterFinish": false,
+      "installerHeader": "src/assets/installer-header.bmp",
+      "installerSidebar": "src/assets/installer-sidebar.bmp",
+      "uninstallerSidebar": "src/assets/installer-sidebar.bmp",
+      "installerIcon": "src/assets/installer.ico",
+      "uninstallerIcon": "src/assets/installer.ico"
+    }
+  }
+}

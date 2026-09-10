@@ -1,0 +1,164 @@
+name: Marmor Gold Delivery
+
+on:
+  push:
+    branches: [build/batto-obs-tool-2.1-core]
+    paths: [.github/workflows/marmor-gold-delivery.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: marmor-gold-delivery-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      commit: ${{ steps.current.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: current
+        name: Lock current application commit
+        shell: bash
+        run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Core, storage, runtime and UI verification
+        run: |
+          npm run check
+          npm run smoke
+          npm run test:storage
+          npm run test:core
+          npm run test:runtime
+          npm run test:ui
+      - name: Broadcast regression
+        run: npm run test:broadcast
+      - name: Event load regression
+        env:
+          STRESS_SECONDS: 60
+          STRESS_RATE: 500
+        run: npm run stress
+      - name: Short soak regression
+        env:
+          SOAK_MINUTES: 1
+        run: node scripts/soak.cjs
+
+  windows-delivery:
+    needs: prepare-and-test
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-and-test.outputs.commit }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Windows verification
+        run: npm run check && npm run smoke && npm run test:storage && npm run test:core && npm run test:runtime && npm run test:ui && npm run test:broadcast
+      - name: Build Windows installer
+        run: npm run pack:win
+      - name: Install and run application acceptance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Get-ChildItem 'dist\Batto-OBS-Tool-2.1-Setup-2.1.2.exe' | Select-Object -First 1
+          if (-not $installer) { throw '2.1.2 installer not found' }
+          $installDir = Join-Path $env:RUNNER_TEMP 'batto-gold-installed'
+          $setup = Start-Process -FilePath $installer.FullName -ArgumentList @('/S', "/D=$installDir") -PassThru -Wait
+          if ($setup.ExitCode -ne 0) { throw "Installer failed: $($setup.ExitCode)" }
+          $exe = Join-Path $installDir 'Batto OBS Tool 2.1.exe'
+          if (-not (Test-Path $exe)) { throw 'Installed executable is missing' }
+          $env:BATTO_QA_DIR = Join-Path $env:RUNNER_TEMP 'batto-gold-qa'
+          $process = Start-Process -FilePath $exe -ArgumentList '--batto-qa' -PassThru
+          if (-not $process.WaitForExit(90000)) { Stop-Process -Id $process.Id -Force; throw 'Installed application acceptance timed out' }
+          $report = Join-Path $env:BATTO_QA_DIR 'result.json'
+          if (-not (Test-Path $report)) { throw 'Application produced no acceptance report' }
+          $result = Get-Content $report -Raw | ConvertFrom-Json
+          if (-not $result.ok -or $process.ExitCode -ne 0) { throw "Application acceptance failed: $($result.error)" }
+          "BATTO_INSTALLED_EXE=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "BATTO_QA_DIR=$env:BATTO_QA_DIR" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Install test-only Electron browser driver
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: npm install --no-save --package-lock=false playwright --no-audit --no-fund
+      - name: Exercise Start, Broadcast, Settings and detached chat
+        shell: pwsh
+        run: |
+          @'
+          const { _electron: electron } = require('playwright');
+          const fs = require('fs');
+          const path = require('path');
+          const assert = require('assert/strict');
+          (async () => {
+            const out = process.env.BATTO_QA_DIR;
+            fs.mkdirSync(out,{recursive:true});
+            const checks=[]; const errors=[]; let app;
+            try {
+              const profile=path.join(process.env.RUNNER_TEMP,'batto-gold-rendered-profile');
+              fs.mkdirSync(profile,{recursive:true});
+              app=await electron.launch({executablePath:process.env.BATTO_INSTALLED_EXE,env:{...process.env,APPDATA:profile},timeout:90000});
+              const page=await app.firstWindow({timeout:90000});
+              page.on('pageerror',e=>errors.push(e.message));
+              await page.waitForFunction(()=>window.batto&&document.querySelector('#mainNav'),{timeout:60000});
+              const nav=await page.locator('#mainNav [data-view]').evaluateAll(items=>items.map(el=>el.getAttribute('data-view')));
+              assert(nav.includes('start')); assert(nav.indexOf('start')<nav.indexOf('dashboard'));
+              checks.push('Start button is above Multi-Chat');
+              for(const view of ['start','dashboard','broadcast','settings']){
+                await page.locator(`#mainNav [data-view="${view}"]`).click();
+                await page.waitForTimeout(350);
+                assert(await page.locator(`[data-view-panel="${view}"]`).isVisible());
+                const broken=await page.locator('img:visible').evaluateAll(imgs=>imgs.filter(i=>!i.complete||i.naturalWidth===0).map(i=>i.getAttribute('src')));
+                assert.deepEqual(broken,[]);
+                await page.screenshot({path:path.join(out,`${view}.png`),fullPage:false});
+                checks.push(`${view} rendered with loaded images`);
+              }
+              await page.evaluate(()=>window.batto.detachChat());
+              const deadline=Date.now()+15000;
+              while(app.windows().length<2&&Date.now()<deadline) await page.waitForTimeout(100);
+              const detached=app.windows().find(w=>w!==page); assert(detached);
+              await detached.waitForFunction(()=>window.batto&&document.querySelector('#chatList'));
+              await detached.screenshot({path:path.join(out,'detached.png'),fullPage:false});
+              checks.push('Detached chat window opens');
+              assert.deepEqual(errors,[]);
+              fs.writeFileSync(path.join(out,'rendered-checks.json'),JSON.stringify({ok:true,checks,errors},null,2));
+            } catch(e) {
+              fs.writeFileSync(path.join(out,'rendered-checks.json'),JSON.stringify({ok:false,checks,errors,error:e.stack},null,2));
+              throw e;
+            } finally { if(app) await app.close(); }
+          })().catch(e=>{console.error(e);process.exit(1)});
+          '@ | Set-Content scripts/gold-delivery-visual-test.cjs -Encoding utf8
+          node scripts/gold-delivery-visual-test.cjs
+      - name: Package verified delivery
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem 'dist\Batto-OBS-Tool-2.1-Setup-2.1.2.exe' | Select-Object -First 1
+          Copy-Item $installer.FullName 'dist\Batto-MarmorGold-2.1.2-Windows-Setup.exe'
+          Compress-Archive -Path 'dist\Batto-MarmorGold-2.1.2-Windows-Setup.exe' -DestinationPath 'dist\Batto-MarmorGold-2.1.2-Windows.zip' -Force
+          $hash=(Get-FileHash 'dist\Batto-MarmorGold-2.1.2-Windows-Setup.exe' -Algorithm SHA256).Hash.ToLower()
+          "$hash  Batto-MarmorGold-2.1.2-Windows-Setup.exe" | Set-Content 'dist\SHA256SUMS.txt' -Encoding ascii
+      - name: Upload verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Batto-MarmorGold-2.1.2-QA
+          path: ${{ runner.temp }}/batto-gold-qa/
+          if-no-files-found: warn
+      - name: Upload verified Windows program
+        uses: actions/upload-artifact@v4
+        with:
+          name: Batto-MarmorGold-2.1.2-Windows-Verified
+          path: |
+            dist/Batto-MarmorGold-2.1.2-Windows-Setup.exe
+            dist/Batto-MarmorGold-2.1.2-Windows.zip
+            dist/SHA256SUMS.txt
+          if-no-files-found: error

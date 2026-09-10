@@ -1,0 +1,47 @@
+name: Import approved original artwork
+on:
+  push:
+    branches: [build/batto-obs-tool-2.1-core]
+    paths: [.github/workflows/import-approved-artwork.yml]
+permissions:
+  contents: write
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: build/batto-obs-tool-2.1-core
+      - name: Fetch and validate original image bytes
+        shell: python
+        run: |
+          import pathlib, hashlib, urllib.request
+          root = pathlib.Path('src/assets/source')
+          root.mkdir(parents=True, exist_ok=True)
+          assets = [
+            ('start-original.png', '53ffc603bee6d5d02e8b96fed71f23ccb890914afa7132c8683b9dbf2d638ae1', 'https://d2jqrm6oza8nb6.cloudfront.net/datasets/ae2a81f6-e504-4d34-816e-ae7ab7d5231f.png?_jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJrZXlIYXNoIjoiZTczOWFhOTM2N2RhYmM1ZSIsImJ1Y2tldCI6InJ1bndheS1kYXRhc2V0cyIsInN0YWdlIjoicHJvZCIsImV4cCI6MTc4OTEyNzMxNX0.DvTQK7uO8FkYUh_ApVXlVA23BB0iReXFWpT1ls9J5E0'),
+            ('rose-original.jpeg', 'fbf1a4d88f2735fc8e1cea1379e9a73f79562310a0fcc63f0e7a83ab7b2b279e', 'https://d2jqrm6oza8nb6.cloudfront.net/datasets/7fbd6f9b-af54-460c-bde9-db0bdd71e696.jpeg?_jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJrZXlIYXNoIjoiN2IwMmI1Mzc1NGY0NjQxZCIsImJ1Y2tldCI6InJ1bndheS1kYXRhc2V0cyIsInN0YWdlIjoicHJvZCIsImV4cCI6MTc4OTEwOTQzMX0.gRSQwYrOSDQUOzv2YWm_P7BxJw3HfBPo3bs0TSzOs4k'),
+            ('sarah-original.png', '01cbebc0126e01bcec8d52944e4f47a16a5b006838b01739847142cf06267aab', 'https://d2jqrm6oza8nb6.cloudfront.net/datasets/57ad71ff-b39c-479e-b9b8-522496b13862.png?_jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJrZXlIYXNoIjoiMzUxNWEyZmU5NTY4NzExMCIsImJ1Y2tldCI6InJ1bndheS1kYXRhc2V0cyIsInN0YWdlIjoicHJvZCIsImV4cCI6MTc4OTA4NDAzMH0.F-qFv6Oe_2eme2FQhgUFAj9Gnpk2LWVgRFdytjB5jms'),
+            ('michelle-original.png', '769ffffee75c95bab57ddc0c3c29bdaa91e0b889339fbbf3aa78cb1f17964dd8', 'https://d2jqrm6oza8nb6.cloudfront.net/datasets/45da27a5-f3c6-42e7-82d9-917fa183fc2c.png?_jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJrZXlIYXNoIjoiMmVkN2NiMzYxZmUxYmQ4MyIsImJ1Y2tldCI6InJ1bndheS1kYXRhc2V0cyIsInN0YWdlIjoicHJvZCIsImV4cCI6MTc4OTA4NDU5OH0.5OEMDTq3VGKCX07q2HpiLxjRl8dJxs6_3vh-h0rWlEQ')
+          ]
+          for name, expected, url in assets:
+              target = root / name
+              if target.exists() and hashlib.sha256(target.read_bytes()).hexdigest() == expected:
+                  continue
+              data = urllib.request.urlopen(url, timeout=60).read()
+              actual = hashlib.sha256(data).hexdigest()
+              if actual != expected:
+                  raise RuntimeError('Original image checksum mismatch: ' + name)
+              target.write_bytes(data)
+              print('Verified original:', name, len(data), actual)
+      - name: Persist validated source assets on the working branch
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/assets/source/
+          if ! git diff --cached --quiet; then
+            git commit -m 'Store exact approved Start, rose, Sarah and Michelle artwork'
+            git push origin HEAD:build/batto-obs-tool-2.1-core
+          fi

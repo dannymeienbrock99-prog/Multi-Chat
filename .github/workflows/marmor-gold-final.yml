@@ -1,0 +1,86 @@
+name: Marmor Gold Final 2.1.2
+
+on:
+  push:
+    branches: [build/batto-obs-tool-2.1-core]
+    paths: [.github/workflows/marmor-gold-final.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Verify application and independent broadcasts
+        run: |
+          npm run check
+          npm run smoke
+          npm run test:storage
+          npm run test:core
+          npm run test:runtime
+          npm run test:ui
+          npm run test:broadcast
+      - name: 500 events/s regression
+        env:
+          STRESS_SECONDS: 60
+          STRESS_RATE: 500
+        run: npm run stress
+      - name: Short soak regression
+        env:
+          SOAK_MINUTES: 1
+        run: node scripts/soak.cjs
+
+  windows:
+    needs: verify
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Verify Windows runtime
+        run: npm run check && npm run smoke && npm run test:storage && npm run test:core && npm run test:runtime && npm run test:ui && npm run test:broadcast
+      - name: Build 2.1.2 Windows installer
+        run: npm run pack:win
+      - name: Install and run packaged application
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $installer=Get-Item 'dist\Batto-OBS-Tool-2.1-Setup-2.1.2.exe'
+          $installDir=Join-Path $env:RUNNER_TEMP 'batto-final-installed'
+          $setup=Start-Process -FilePath $installer.FullName -ArgumentList @('/S', "/D=$installDir") -PassThru -Wait
+          if($setup.ExitCode -ne 0){throw "Installer failed: $($setup.ExitCode)"}
+          $exe=Join-Path $installDir 'Batto OBS Tool 2.1.exe'
+          if(!(Test-Path $exe)){throw 'Installed application is missing'}
+          $env:BATTO_QA_DIR=Join-Path $env:RUNNER_TEMP 'batto-final-qa'
+          $p=Start-Process -FilePath $exe -ArgumentList '--batto-qa' -PassThru
+          if(-not $p.WaitForExit(90000)){Stop-Process -Id $p.Id -Force;throw 'Installed app QA timeout'}
+          $report=Join-Path $env:BATTO_QA_DIR 'result.json'
+          if(!(Test-Path $report)){throw 'No installed-app QA report'}
+          $r=Get-Content $report -Raw | ConvertFrom-Json
+          if(!$r.ok -or $p.ExitCode -ne 0){throw "Installed app QA failed: $($r.error)"}
+      - name: Package final delivery
+        shell: pwsh
+        run: |
+          Copy-Item 'dist\Batto-OBS-Tool-2.1-Setup-2.1.2.exe' 'dist\CRAZY-BATTO-MultiChat-2.1.2-MarmorGold-Setup.exe'
+          Compress-Archive -Path 'dist\CRAZY-BATTO-MultiChat-2.1.2-MarmorGold-Setup.exe' -DestinationPath 'dist\CRAZY-BATTO-MultiChat-2.1.2-MarmorGold-Windows.zip' -Force
+          $hash=(Get-FileHash 'dist\CRAZY-BATTO-MultiChat-2.1.2-MarmorGold-Setup.exe' -Algorithm SHA256).Hash.ToLower()
+          "$hash  CRAZY-BATTO-MultiChat-2.1.2-MarmorGold-Setup.exe" | Set-Content 'dist\SHA256SUMS.txt' -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CRAZY-BATTO-MultiChat-2.1.2-MarmorGold-Verified
+          path: |
+            dist/CRAZY-BATTO-MultiChat-2.1.2-MarmorGold-Setup.exe
+            dist/CRAZY-BATTO-MultiChat-2.1.2-MarmorGold-Windows.zip
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
