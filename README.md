@@ -69,7 +69,7 @@ Die bisherigen 1.1-Funktionen bleiben die UI-Basis und werden schrittweise auf d
 - Multi-Chat TikTok / Twitch / YouTube / CNG
 - Rechtsklick-Moderation und Verlauf
 - TikFinity Local Bridge und AxelChat
-- eigenes Eingabefeld für den TikFinity-Chat-Link; HTTP wird auf HTTPS angehoben und der Link dauerhaft gespeichert
+- eigenes Eingabefeld für den TikFinity-Chat-Link; HTTP wird auf HTTPS angehoben, dauerhaft gespeichert und direkt im TikTok-Tab des Chatfensters angezeigt
 - zusätzliche TikFinity-Browser-Widgets für Follower, Gifts, Likes, Shares, Abos, Ziele, Ranglisten und eigene Anzeigen
 - stabile lokale TikFinity-OBS-URLs unter `http://127.0.0.1:17777/overlay/tikfinity/<widget-id>`
 - originale Plattform-Logos an TikTok-, Twitch-, YouTube- und CNG-Nachrichten im Multi-Chat und Chat-Overlay
@@ -92,6 +92,7 @@ Die bisherigen 1.1-Funktionen bleiben die UI-Basis und werden schrittweise auf d
 
 - keine privaten TikTok-Endpunkte, Signaturmechanismen, Cookie-Hacks oder Bypässe im Core
 - TikFinity-HTTPS-Widgets werden auf `tikfinity.zerody.one/widget/` begrenzt; die Event-/Chat-Bridge bleibt davon getrennt bei `ws://` bzw. `wss://`
+- das direkte TikFinity-Chat-Widget zeigt nur Nachrichten, die nach dem Laden während einer aktiven LIVE-Verbindung eintreffen; für zusammengeführte Nachrichten, Commands und TTS muss zusätzlich die lokale TikFinity-Bridge verbunden sein
 - Loopback-only als Default für Overlay und interne WebSockets
 - Electron `contextIsolation`, keine Node-Integration im Renderer
 - Secrets via `safeStorage`

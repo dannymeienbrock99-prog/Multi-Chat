@@ -83,6 +83,12 @@ function inferTikFinityWidgetType(value) {
   return TIKFINITY_WIDGET_TYPES.find(([type])=>type!=='custom' && lower.includes(type))?.[0] || 'custom';
 }
 
+function tikFinityChatWidget() {
+  const widgets=S.config?.platforms?.tikfinity?.webWidgets;
+  if (!Array.isArray(widgets)) return null;
+  return widgets.find((widget)=>widget?.enabled === true && widget.eventType === 'chat' && normalizeTikFinityWidgetUrl(widget.url)) || null;
+}
+
 function statusClass(status) {
   return status?.connected ? 'ok' : status?.state === 'error' ? 'error' : '';
 }
@@ -165,13 +171,28 @@ function counts(platform) {
 
 function renderChat() {
   const tabs = [['all', 'Alle'], ['tiktok', 'TikTok'], ['twitch', 'Twitch'], ['cng', 'CNG'], ['youtube', 'YouTube']];
-  $('#chatTabs').innerHTML = tabs.map(([id, label]) => `<button class="${S.chatTab === id ? 'active' : ''}" data-chat-tab="${id}">${label} (${counts(id)})</button>`).join('');
+  const tikfinityChat=tikFinityChatWidget();
+  $('#chatTabs').innerHTML = tabs.map(([id, label]) => `<button class="${S.chatTab === id ? 'active' : ''}" data-chat-tab="${id}">${label}${id === 'tiktok' && tikfinityChat ? ' LIVE' : ''} (${counts(id)})</button>`).join('');
   $$('[data-chat-tab]').forEach((button) => {
     button.onclick = () => { S.chatTab = button.dataset.chatTab; renderChat(); };
   });
 
+  const chatList=$('#chatList');
+  if (S.chatTab === 'tiktok' && tikfinityChat) {
+    const url=normalizeTikFinityWidgetUrl(tikfinityChat.url);
+    chatList.classList.add('tikfinity-chat-active');
+    const current=$('#tikfinityChatFrame');
+    if (!current || current.dataset.url !== url) {
+      chatList.innerHTML = `<div class="tikfinity-chat-embed"><div class="tikfinity-chat-frame-bar"><span><span class="platform-icon tiktok">${platformIcon('tiktok')}</span><b>TikFinity HTTP-Chat</b></span><small id="tikfinityChatFrameState">Quelle wird geladen · nur neue LIVE-Nachrichten</small><button id="tikfinityChatReload" type="button">Neu laden</button></div><iframe id="tikfinityChatFrame" class="tikfinity-chat-frame" data-url="${esc(url)}" src="${esc(url)}" title="TikFinity TikTok LIVE-Chat" loading="eager" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin"></iframe></div>`;
+      const frame=$('#tikfinityChatFrame');
+      frame.addEventListener('load',()=>{const state=$('#tikfinityChatFrameState');if(state)state.textContent='Quelle geladen · neue LIVE-Nachrichten erscheinen ab jetzt';});
+      $('#tikfinityChatReload').onclick=()=>{const state=$('#tikfinityChatFrameState');if(state)state.textContent='Quelle wird neu geladen …';frame.setAttribute('src',frame.dataset.url);};
+    }
+    return;
+  }
+  chatList.classList.remove('tikfinity-chat-active');
   const rows = S.chatTab === 'all' ? S.messages : S.messages.filter((message) => message.platform === S.chatTab);
-  $('#chatList').innerHTML = rows.length
+  chatList.innerHTML = rows.length
     ? rows.slice(-250).map((message) => { const platform=platformKey(message.platform); const label=PLATFORM_META[platform].label; return `<div class="chat-row"><span class="chat-time">${time(message.timestamp)}</span><span class="platform-icon ${platform}" aria-label="${label}">${platformIcon(platform)}</span><span class="chat-user ${platform}" data-user="${esc(message.username)}" data-platform="${platform}">${esc(message.displayName || message.username)}</span><span class="chat-text">${esc(message.message)}</span></div>`; }).join('')
     : `<div class="empty"><div><b>Noch keine Nachrichten</b><br><small>TikFinity, AxelChat, Twitch oder YouTube verbinden.</small></div></div>`;
 
@@ -409,7 +430,7 @@ function renderPlatformsModule() {
   }).join('');
   $('#platformsModule').innerHTML =
     adapterCard('tikfinity', 'TikFinity Event-/Chat-Bridge (WebSocket)', 'Für echte Chatnachrichten und Events im Multi-Chat. Hier gehört nur ws:// oder wss:// hinein; TikFinity-HTTPS-Links werden dauerhaft im Bereich darunter gespeichert.', `<div class="form-grid"><div><label>Lokaler WebSocket</label><input id="pfTikUrl" value="${esc(tikfinity.url)}" placeholder="ws://127.0.0.1:21213/"></div><div><label>Reconnect Sekunden</label><input id="pfTikRec" type="number" value="${tikfinity.reconnectSeconds}"></div></div><label class="check"><input id="pfTikAuto" type="checkbox" ${tikfinity.autoConnect ? 'checked' : ''}> Automatisch verbinden</label>`) +
-    section('TikFinity Chat-HTTP/HTTPS', `<div class="success-note">Hier den Chat-Link aus TikFinity einfügen. Er wird dauerhaft gespeichert und nicht mehr aus dem Feld gelöscht. Ein Link mit <b>http://</b> wird automatisch sicher als <b>https://</b> gespeichert.</div><div style="margin-top:10px"><label>TikFinity Chat-URL</label><input id="pfTikChatUrl" type="url" value="${esc(chatWidget?.url || '')}" placeholder="https://tikfinity.zerody.one/widget/chat?cid=..."></div><div class="toolbar"><button class="primary" id="pfTikChatSave">Chat-Link speichern</button>${chatWidget ? '<button class="danger" id="pfTikChatRemove">Chat-Link entfernen</button>' : ''}<span class="conn-state ${chatWidget?.enabled ? 'ok' : ''}">${chatWidget ? (chatWidget.enabled ? 'Chat-Link gespeichert und aktiv' : 'Chat-Link gespeichert, aber deaktiviert') : 'Chat-Link muss eingefügt werden'}</span></div>${chatWidget ? `<div class="url-row"><span>Stabile OBS-URL</span><code>${esc(`${overlayBase()}/overlay/tikfinity/${encodeURIComponent(chatWidget.id)}`)}</code><button id="pfTikChatCopyObs">Kopieren</button></div>` : ''}`) +
+    section('TikFinity Chat-HTTP/HTTPS', `<div class="success-note">Hier den Chat-Link aus TikFinity einfügen. Er wird dauerhaft gespeichert und direkt im <b>TikTok-Tab des Chatfensters</b> geladen. Ein Link mit <b>http://</b> wird automatisch sicher als <b>https://</b> gespeichert.</div><div class="warning-note" style="margin-top:8px">Das TikFinity-Widget zeigt nur neue Nachrichten ab dem Laden der Quelle. Für zusammengeführte Nachrichten, Commands und TTS bleibt die lokale WebSocket-Bridge zusätzlich erforderlich.</div><div style="margin-top:10px"><label>TikFinity Chat-URL</label><input id="pfTikChatUrl" type="url" value="${esc(chatWidget?.url || '')}" placeholder="https://tikfinity.zerody.one/widget/chat?cid=..."></div><div class="toolbar"><button class="primary" id="pfTikChatSave">Chat-Link speichern</button>${chatWidget ? '<button id="pfTikChatShow">Im TikTok-Tab anzeigen</button><button class="danger" id="pfTikChatRemove">Chat-Link entfernen</button>' : ''}<span class="conn-state ${chatWidget?.enabled ? 'ok' : ''}">${chatWidget ? (chatWidget.enabled ? 'Chat-Link gespeichert und im TikTok-Tab aktiv' : 'Chat-Link gespeichert, aber deaktiviert') : 'Chat-Link muss eingefügt werden'}</span></div>${chatWidget ? `<div class="url-row"><span>Stabile OBS-URL</span><code>${esc(`${overlayBase()}/overlay/tikfinity/${encodeURIComponent(chatWidget.id)}`)}</code><button id="pfTikChatCopyObs">Kopieren</button></div>` : ''}`) +
     section('Weitere TikFinity-Widgets – Follower & Co.', `<div class="success-note">Zusätzlich kannst du getrennte Anzeigen für neue Follower, Geschenke, Likes, Shares, Abos, Ziele, Ranglisten und weitere Inhalte speichern.</div><div class="warning-note" style="margin-top:8px">HTTP/HTTPS-Widgets zeigen TikFinity direkt in OBS an. Damit Events zusätzlich Commands, TTS oder Medien im Batto Tool auslösen, muss die WebSocket-Bridge oben verbunden sein.</div><div class="form-grid three" style="margin-top:10px"><div><label>Widget-Name</label><input id="pfTikWidgetName" maxlength="80" value="${esc(editingWidget?.name || '')}" placeholder="z. B. Neue Follower"></div><div><label>Anzeige / Event</label><select id="pfTikWidgetType">${widgetTypeOptions}</select></div><div><label>TikFinity HTTP/HTTPS-URL</label><input id="pfTikWidgetUrl" type="url" value="${esc(editingWidget?.url || '')}" placeholder="https://tikfinity.zerody.one/widget/..."></div></div><label class="check"><input id="pfTikWidgetEnabled" type="checkbox" ${editingWidget?.enabled === false ? '' : 'checked'}> Widget aktiv</label><div class="toolbar"><button class="primary" id="pfTikWidgetSave">${editingWidget ? 'Änderungen speichern' : 'Weiteres Widget hinzufügen'}</button>${editingWidget ? '<button id="pfTikWidgetCancel">Abbrechen</button>' : ''}<span class="conn-state ${widgets.some((widget) => widget.enabled) ? 'ok' : ''}">${widgets.filter((widget) => widget.enabled).length} aktiv · ${widgets.length}/24 gespeichert</span></div><div class="tikfinity-widget-list">${widgetRows || '<small>Noch kein TikFinity-Widget gespeichert.</small>'}</div>`) +
     adapterCard('axelchat', 'AxelChat WebSocket', 'Zusätzliche lokale Chat-Bridge.', `<div class="form-grid"><div><label>WebSocket</label><input id="pfAxUrl" value="${esc(c.axelchat.url)}"></div><div><label>Reconnect Sekunden</label><input id="pfAxRec" type="number" value="${c.axelchat.reconnectSeconds}"></div></div><label class="check"><input id="pfAxAuto" type="checkbox" ${c.axelchat.autoConnect ? 'checked' : ''}> Automatisch verbinden</label>`) +
     adapterCard('twitch', 'Twitch Direkt-Chat', 'Öffentlichen Chat direkt lesen. Kein Tokenfeld; Senden/Plattformmoderation bleiben im Nur-Lesen-Modus deaktiviert.', `<div><label>Channel / Twitch-URL / Dashboard-URL</label><input id="pfTwChannel" value="${esc(c.twitch.channel)}"></div><label class="check"><input id="pfTwAuto" type="checkbox" ${c.twitch.autoConnect ? 'checked' : ''}> Automatisch verbinden</label>`) +
@@ -449,9 +470,11 @@ function renderPlatformsModule() {
     const item={id:chatWidget?.id || newId,name:'TikFinity Chat',eventType:'chat',url,enabled:true};
     const next=chatWidget ? widgets.map((widget)=>widget.id===chatWidget.id ? item : widget) : [...widgets,item];
     S.tikfinityWidgetEdit=null;
-    await saveAndSync({platforms:{...c,tikfinity:{...tikfinity,webWidgets:next}}},'TikFinity Chat-Link dauerhaft gespeichert.');
+    S.chatTab='tiktok';
+    await saveAndSync({platforms:{...c,tikfinity:{...tikfinity,webWidgets:next}}},'TikFinity Chat-Link dauerhaft gespeichert und im TikTok-Tab aktiviert.');
     renderPlatformsModule();
   };
+  $('#pfTikChatShow')?.addEventListener('click',()=>{S.chatTab='tiktok';setView('dashboard');renderChat();});
   $('#pfTikChatRemove')?.addEventListener('click',async()=>{if(!confirm('TikFinity Chat-Link wirklich entfernen?'))return;S.tikfinityWidgetEdit=null;await saveAndSync({platforms:{...c,tikfinity:{...tikfinity,webWidgets:widgets.filter((widget)=>widget.id!==chatWidget.id)}}},'TikFinity Chat-Link entfernt.');renderPlatformsModule();});
   $('#pfTikChatCopyObs')?.addEventListener('click',()=>copy(`${overlayBase()}/overlay/tikfinity/${encodeURIComponent(chatWidget.id)}`));
 
