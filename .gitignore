@@ -1,4 +1,10 @@
 node_modules/
 dist/
+dist-qa/
 *.log
 .DS_Store
+build/generated-installer-key.nsh
+src/assets/installer-header.bmp
+src/assets/installer-sidebar.bmp
+src/assets/installer.ico
+src/assets/marble.jpg

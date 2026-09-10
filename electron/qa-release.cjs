@@ -3,7 +3,7 @@ const {app,BrowserWindow,dialog,nativeImage}=require('electron');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),crypto=require('node:crypto');
 const {WebSocketServer}=require('ws');
 module.exports=async function({win,run,waitFor,checks,dir,profile}){
-  assert.equal(app.getVersion(),'2.1.4');
+  assert.equal(app.getVersion(),'2.1.5');
   await run(`window.__qaErrors=[];window.addEventListener('error',e=>window.__qaErrors.push(e.message));window.addEventListener('unhandledrejection',e=>window.__qaErrors.push(String(e.reason?.message||e.reason)));`);
   async function capture(name){await new Promise(r=>setTimeout(r,200));fs.writeFileSync(path.join(dir,name+'.png'),(await win.webContents.capturePage()).toPNG());}
   for(const item of require('../src/assets/artwork-manifest.json'))assert.equal(crypto.createHash('sha256').update(fs.readFileSync(path.join(__dirname,'../src/assets/source',item.file))).digest('hex'),item.sha256);

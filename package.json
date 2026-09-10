@@ -1,10 +1,10 @@
 {
   "name": "batto-obs-tool",
-  "version": "2.1.4",
+  "version": "2.1.5",
   "description": "Batto OBS Tool 2.1 – modular local-first Multi-Chat, Event Core, OBS, Overlay and Media platform",
   "main": "electron/bootstrap.cjs",
   "author": "Crazy_Batto",
-  "license": "MIT",
+  "license": "SEE LICENSE IN build/license_de.txt",
   "private": true,
   "engines": {
     "node": ">=22 <23"
@@ -25,11 +25,12 @@
     "stress": "node scripts/stress.cjs",
     "soak": "node scripts/soak.cjs",
     "soak:quick": "node -e \"process.env.SOAK_MINUTES='1';require('./scripts/soak.cjs')\"",
-    "prepack:win": "node scripts/restore-app.cjs && electron scripts/prepare-icons.cjs && node scripts/patch-nsis.cjs",
+    "prepack:win": "node scripts/restore-app.cjs && electron scripts/prepare-icons.cjs && node scripts/prepare-installer.cjs && node scripts/patch-nsis.cjs",
     "pack:win": "electron-builder --win nsis --publish never",
     "test:storage": "node scripts/storage-regression.cjs",
     "test:runtime": "node scripts/runtime21.cjs",
-    "test:release": "node scripts/release-regression.cjs"
+    "test:release": "node scripts/release-regression.cjs",
+    "test:installer": "node scripts/installer-regression.cjs"
   },
   "dependencies": {
     "express": "5.1.0",
@@ -63,10 +64,17 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
+      "include": "build/installer.nsh",
+      "license": "build/license_de.txt",
+      "installerLanguages": [
+        "de_DE"
+      ],
+      "language": "1031",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Batto OBS Tool 2.1",
       "runAfterFinish": false,
+      "installerHeader": "src/assets/installer-header.bmp",
       "installerSidebar": "src/assets/installer-sidebar.bmp",
       "uninstallerSidebar": "src/assets/installer-sidebar.bmp",
       "installerIcon": "src/assets/installer.ico",

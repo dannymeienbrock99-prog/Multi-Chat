@@ -9,13 +9,16 @@ function bmp(image){const {width:w,height:h}=image.getSize(),src=image.toBitmap(
 function ico(image){const images=[16,24,32,48,64,128,256].map(n=>({n,png:contain(image,n,n).toPNG()}));let offset=6+16*images.length;const head=Buffer.alloc(offset);head.writeUInt16LE(1,2);head.writeUInt16LE(images.length,4);images.forEach(({n,png},i)=>{const at=6+i*16;head[at]=n===256?0:n;head[at+1]=head[at];head.writeUInt16LE(1,at+4);head.writeUInt16LE(32,at+6);head.writeUInt32LE(png.length,at+8);head.writeUInt32LE(offset,at+12);offset+=png.length;});return Buffer.concat([head,...images.map(x=>x.png)]);}
 app.whenReady().then(()=>{
   for(const item of require('../src/assets/artwork-manifest.json')){const bytes=fs.readFileSync(path.join(root,'source',item.file));if(crypto.createHash('sha256').update(bytes).digest('hex')!==item.sha256)throw new Error('Originalbild verändert: '+item.file);load('source/'+item.file);}
-  const logo=load('brand-logo.jpg'),rose=load('source/rose-original.jpeg');
+  const logo=load('brand-logo.jpg'),rose=load('source/rose-original.jpeg'),installerArt=load('source/michelle-sarah-installer.jpg');
   fs.writeFileSync(path.join(root,'icon.png'),contain(logo,256,256).toPNG());
   fs.writeFileSync(path.join(root,'installer.ico'),ico(rose));
-  fs.writeFileSync(path.join(root,'installer-sidebar.bmp'),bmp(contain(rose,164,314)));
+  const sidebar=installerArt.crop({x:258,y:0,width:564,height:1080}).resize({width:164,height:314,quality:'best'});
+  const header=installerArt.crop({x:190,y:200,width:700,height:266}).resize({width:150,height:57,quality:'best'});
+  fs.writeFileSync(path.join(root,'installer-sidebar.bmp'),bmp(sidebar));
+  fs.writeFileSync(path.join(root,'installer-header.bmp'),bmp(header));
   // Only the marble texture is cropped; all four supplied artworks remain byte-identical.
   const size=rose.getSize();const marble=rose.crop({x:0,y:Math.round(size.height*.44),width:Math.round(size.width*.14),height:Math.round(size.height*.24)});
   fs.writeFileSync(path.join(root,'marble.jpg'),marble.resize({width:630,height:600,quality:'best'}).toJPEG(92));
   for(const file of ['icon.png','marble.jpg'])load(file);
-  console.log('Vier Originalbilder, proportionale Logos und Rosen-Installer-Grafiken geprüft.');app.quit();
+  console.log('Sechs Originalbilder, proportionale Logos sowie Michelle/Sarah-Installer-Grafiken geprüft.');app.quit();
 }).catch(error=>{console.error(error);app.exit(1);});
