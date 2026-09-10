@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [main]
+    branches: [main, build/batto-obs-tool-2.1-core]
   pull_request:
   workflow_dispatch:
     inputs:
@@ -34,6 +34,8 @@ jobs:
         run: npm run test:ui
       - name: Settings and secrets storage regression
         run: npm run test:storage
+      - name: Installer license and key regression
+        run: npm run test:installer
       - name: Core 2.1 acceptance
         run: npm run test:core
       - name: 500 events per second for 60 seconds
@@ -50,13 +52,17 @@ jobs:
             electron/
             src/
             scripts/
+            build/installer.nsh
+            build/installer-key-verifier.json
+            build/license_de.txt
             package.json
+            package-lock.json
             README.md
           if-no-files-found: error
   windows-installer:
     needs: core-acceptance
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -65,9 +71,82 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Verify Windows core, secrets and HTTP runtime
-        run: npm run check && npm run smoke && npm run test:storage && npm run test:core && npm run test:runtime
-      - name: Build installer with decoded image verification
-        run: npm run pack:win
+        run: npm run check && npm run smoke && npm run test:storage && npm run test:core && npm run test:runtime && npm run test:installer
+      - name: Build and test isolated QA key gate, then rebuild production installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $random = New-Object byte[] 14
+          [Security.Cryptography.RandomNumberGenerator]::Fill($random)
+          $qaKey = -join ($random | ForEach-Object { ($_ % 10).ToString() })
+          $lastDigit = [int]::Parse($qaKey.Substring(13, 1))
+          $wrongKey = $qaKey.Substring(0, 13) + (($lastDigit + 1) % 10).ToString()
+          $qaInstallerPattern = 'dist-qa\Batto-OBS-Tool-2.1-Setup-*.exe'
+
+          try {
+            $env:BATTO_INSTALL_KEY_OVERRIDE = $qaKey
+            npm run pack:win -- --config.directories.output=dist-qa
+            if ($LASTEXITCODE -ne 0) { throw 'QA installer build failed.' }
+            Remove-Item Env:BATTO_INSTALL_KEY_OVERRIDE -ErrorAction SilentlyContinue
+
+            $qaInstallers = @(Get-ChildItem $qaInstallerPattern)
+            if ($qaInstallers.Count -ne 1) { throw "Expected exactly one QA installer, found $($qaInstallers.Count)." }
+            $installer = $qaInstallers[0]
+            $env:BATTO_KEY_LEAK_SCAN = $qaKey
+            node scripts/assert-key-absent.cjs $installer.FullName build/generated-installer-key.nsh
+            if ($LASTEXITCODE -ne 0) { throw 'QA installer plaintext scan failed.' }
+            Remove-Item Env:BATTO_KEY_LEAK_SCAN -ErrorAction SilentlyContinue
+
+            $env:BATTO_INSTALL_KEY = $qaKey
+            Remove-Item Env:BATTO_ACCEPT_LICENSE -ErrorAction SilentlyContinue
+            $noConsentDir = Join-Path $env:RUNNER_TEMP 'batto-reject-no-consent'
+            $noConsent = Start-Process -FilePath $installer.FullName -ArgumentList @('/S', "/D=$noConsentDir") -PassThru -Wait
+            if ($noConsent.ExitCode -eq 0 -or (Test-Path (Join-Path $noConsentDir 'Batto OBS Tool 2.1.exe'))) {
+              throw 'Silent installation without explicit license consent was not rejected.'
+            }
+
+            $env:BATTO_ACCEPT_LICENSE = 'YES'
+            Remove-Item Env:BATTO_INSTALL_KEY -ErrorAction SilentlyContinue
+            $noKeyDir = Join-Path $env:RUNNER_TEMP 'batto-reject-no-key'
+            $noKey = Start-Process -FilePath $installer.FullName -ArgumentList @('/S', "/D=$noKeyDir") -PassThru -Wait
+            if ($noKey.ExitCode -eq 0 -or (Test-Path (Join-Path $noKeyDir 'Batto OBS Tool 2.1.exe'))) {
+              throw 'Silent installation without key was not rejected.'
+            }
+
+            $env:BATTO_INSTALL_KEY = $wrongKey
+            $wrongKeyDir = Join-Path $env:RUNNER_TEMP 'batto-reject-wrong-key'
+            $wrong = Start-Process -FilePath $installer.FullName -ArgumentList @('/S', "/D=$wrongKeyDir") -PassThru -Wait
+            if ($wrong.ExitCode -eq 0 -or (Test-Path (Join-Path $wrongKeyDir 'Batto OBS Tool 2.1.exe'))) {
+              throw 'Silent installation with wrong key was not rejected.'
+            }
+
+            $env:BATTO_INSTALL_KEY = $qaKey
+            $installDir = Join-Path $env:RUNNER_TEMP 'batto-installed'
+            $accepted = Start-Process -FilePath $installer.FullName -ArgumentList @('/S', "/D=$installDir") -PassThru -Wait
+            if ($accepted.ExitCode -ne 0) { throw "Installer failed with isolated QA key: $($accepted.ExitCode)" }
+            if (-not (Test-Path (Join-Path $installDir 'Batto OBS Tool 2.1.exe'))) {
+              throw 'Installed executable is missing after accepted QA key.'
+            }
+          }
+          finally {
+            Remove-Item Env:BATTO_INSTALL_KEY_OVERRIDE -ErrorAction SilentlyContinue
+            Remove-Item Env:BATTO_INSTALL_KEY -ErrorAction SilentlyContinue
+            Remove-Item Env:BATTO_ACCEPT_LICENSE -ErrorAction SilentlyContinue
+            Remove-Item Env:BATTO_KEY_LEAK_SCAN -ErrorAction SilentlyContinue
+          }
+
+          npm run pack:win
+          if ($LASTEXITCODE -ne 0) { throw 'Production installer rebuild failed.' }
+          $productionInstallers = @(Get-ChildItem 'dist\Batto-OBS-Tool-2.1-Setup-*.exe')
+          if ($productionInstallers.Count -ne 1) { throw "Expected exactly one production installer, found $($productionInstallers.Count)." }
+          $productionInstaller = $productionInstallers[0]
+          $env:BATTO_KEY_LEAK_SCAN = $qaKey
+          node scripts/assert-key-absent.cjs $productionInstaller.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'Production installer plaintext scan failed.' }
+          Remove-Item Env:BATTO_KEY_LEAK_SCAN -ErrorAction SilentlyContinue
+          $qaKey = $null
+          $wrongKey = $null
+          [Array]::Clear($random, 0, $random.Length)
       - name: Test packaged app independently of the installer
         shell: pwsh
         run: |
@@ -81,15 +160,11 @@ jobs:
           $result = Get-Content $report -Raw | ConvertFrom-Json
           $result.checks | ForEach-Object { Write-Host "PASS: $_" }
           if (-not $result.ok -or $process.ExitCode -ne 0) { throw "Packaged app QA failed: $($result.error)" }
-      - name: Install and test real Electron UI and IPC
+      - name: Test installed real Electron UI and IPC
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $installer = Get-ChildItem 'dist\Batto-OBS-Tool-2.1-Setup-*.exe' | Select-Object -First 1
-          if (-not $installer) { throw 'Installer not found' }
           $installDir = Join-Path $env:RUNNER_TEMP 'batto-installed'
-          $setup = Start-Process -FilePath $installer.FullName -ArgumentList @('/S', "/D=$installDir") -PassThru -Wait
-          if ($setup.ExitCode -ne 0) { throw "Installer failed: $($setup.ExitCode)" }
           $exe = Join-Path $installDir 'Batto OBS Tool 2.1.exe'
           if (-not (Test-Path $exe)) { throw "Installed executable missing: $exe" }
           $env:BATTO_QA_DIR = Join-Path $env:RUNNER_TEMP 'batto-qa-report'
@@ -122,8 +197,8 @@ jobs:
       - name: Upload verified Windows installer
         uses: actions/upload-artifact@v4
         with:
-          name: Batto-OBS-Tool-2.1-Windows
-          path: dist/*.exe
+          name: Batto-OBS-Tool-2.1-Windows-${{ github.event_name == 'pull_request' && 'PR-QA' || (github.event_name == 'push' && 'Release' || 'Manual-QA') }}
+          path: dist/Batto-OBS-Tool-2.1-Setup-*.exe
           if-no-files-found: error
   soak-4h:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_four_hour_soak }}

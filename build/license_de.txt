@@ -1,0 +1,170 @@
+﻿NUTZUNGS- UND LIZENZBEDINGUNGEN
+für „Batto OBS Tool“
+
+Stand: 10. September 2026
+
+Copyright © 2026 Crazy_Batto / Team Alpha. Alle Rechte vorbehalten.
+
+
+1. GELTUNGSBEREICH
+
+Diese Nutzungs- und Lizenzbedingungen gelten für das Programm „Batto OBS Tool“ einschließlich aller mitgelieferten Programmdateien, Module, Installationspakete, Benutzeroberflächen, Grafiken, Vorlagen, Dokumentationen, Updates und sonstigen Bestandteile, soweit dafür keine gesonderten Lizenzbedingungen gelten.
+
+Mit der Installation oder Nutzung des Programms nach vorheriger Möglichkeit zur Kenntnisnahme dieser Bedingungen erklärt sich der Nutzer mit ihnen einverstanden.
+
+
+2. EINRÄUMUNG DES NUTZUNGSRECHTS
+
+Der rechtmäßige Empfänger erhält ein einfaches, nicht ausschließliches, nicht unterlizenzierbares und grundsätzlich nicht übertragbares Recht, das Programm auf eigenen oder von ihm rechtmäßig kontrollierten Windows-Computern zu installieren und bestimmungsgemäß für eigene Zwecke zu verwenden.
+
+Eine Übertragung an andere Personen oder Unternehmen ist nur mit vorheriger schriftlicher Zustimmung des Lizenzgebers oder aufgrund zwingender gesetzlicher Bestimmungen zulässig.
+
+Durch die Bereitstellung des Programms werden weder Eigentumsrechte noch Urheberrechte, Markenrechte, Quellcoderechte oder sonstige Schutzrechte übertragen.
+
+
+3. EIGENTUM UND SCHUTZRECHTE
+
+Sämtliche Rechte am Programm und seinen geschützten Bestandteilen verbleiben bei Crazy_Batto / Team Alpha beziehungsweise den jeweils angegebenen Rechteinhabern.
+
+Dies betrifft insbesondere:
+
+- Quellcode und Objektcode,
+- Programmteile und Module,
+- Benutzeroberflächen und geschützte Gestaltungselemente,
+- Grafiken, Bilder, Animationen, Symbole und Audiodateien,
+- Texte, Dokumentationen und Anleitungen,
+- Datenbanken, Konfigurationsstrukturen und Vorlagen,
+- Namen, Logos, Marken und Produktkennzeichen,
+- nicht öffentliche technische Informationen und Entwicklungsmaterialien.
+
+
+4. VERBOT DES KOPIERENS, NACHBAUENS UND NACHAHMENS
+
+Ohne vorherige ausdrückliche schriftliche Zustimmung des Lizenzgebers ist es – soweit nicht zwingend gesetzlich erlaubt – untersagt, das Programm vollständig oder teilweise:
+
+1. zu kopieren, zu vervielfältigen oder außerhalb der erlaubten Nutzung zu speichern;
+2. zu verändern, zu übersetzen, zu portieren, anzupassen, umzuarbeiten oder daraus abgeleitete Programme oder Bestandteile zu erstellen;
+3. gezielt nachzubauen, nachzuahmen, zu rekonstruieren oder als Grundlage beziehungsweise Vorlage für ein eigenes oder konkurrierendes Produkt zu verwenden;
+4. unter Übernahme oder Rekonstruktion des Programmcodes, der geschützten Benutzeroberfläche, der Grafiken, Layouts, Texte, Assets, Datenstrukturen, Dokumentationen oder sonstiger geschützter Bestandteile nachzuentwickeln;
+5. zu dekompilieren, zu disassemblieren, zurückzuentwickeln, zu debuggen oder auf andere Weise zu untersuchen, um den Quellcode, interne Abläufe, Protokolle, Datenstrukturen oder technische Schutzmaßnahmen offenzulegen;
+6. einzelne Dateien, Ressourcen, Grafiken, Symbole, Module, Datenbanken oder andere Bestandteile zu extrahieren und in anderen Programmen, Projekten oder Veröffentlichungen zu verwenden;
+7. in automatisierte Analyse-, Entwicklungs- oder KI-Systeme einzuspeisen, wenn dies der Rekonstruktion, Nachahmung, Quellcodegewinnung oder Entwicklung eines vergleichbaren beziehungsweise konkurrierenden Produkts dient;
+8. vorhandene Lizenzprüfungen, Zugriffsbeschränkungen, Signaturen, Sicherheitsmechanismen oder technische Schutzmaßnahmen zu entfernen, zu umgehen, zu manipulieren oder außer Kraft zu setzen;
+9. unter einem anderen Namen anzubieten, umzubenennen, als eigene Entwicklung auszugeben oder im Rahmen eines White-Label-Produkts zu verwenden.
+
+Dieses Verbot gilt ebenfalls für den Versuch, die Beauftragung Dritter sowie die Unterstützung anderer Personen bei den genannten Handlungen.
+
+
+5. WEITERGABE UND WIRTSCHAFTLICHE VERWERTUNG
+
+Nicht gestattet sind insbesondere:
+
+- die Weitergabe vollständiger Installationspakete oder Programmdateien an Dritte;
+- das Hochladen auf fremde Webseiten, Downloadportale, Cloudspeicher, Tauschbörsen oder Filesharing-Dienste;
+- der Verkauf, die Vermietung, Verpachtung oder Unterlizenzierung;
+- die Einbindung in kostenpflichtige Softwarepakete;
+- der Betrieb als Dienstleistung, Hosting-Angebot oder Software-as-a-Service für Dritte;
+- die Verbreitung veränderter, manipulierter oder neu verpackter Versionen;
+- die Bereitstellung von Lizenzschlüsseln, internen Dateien oder nicht öffentlichen Testversionen.
+
+Erlaubt ist lediglich die Weitergabe eines Links zu einer ausdrücklich als offiziell gekennzeichneten Bezugsquelle.
+
+
+6. GESETZLICH ERLAUBTE HANDLUNGEN
+
+Zwingende gesetzliche Rechte bleiben unberührt. Soweit eine Untersuchung, Vervielfältigung oder Dekompilierung gesetzlich zwingend zur Herstellung der Interoperabilität eines unabhängig entwickelten Programms erlaubt ist, darf sie ausschließlich im gesetzlich erforderlichen Umfang erfolgen.
+
+Dabei gewonnene Informationen dürfen nicht zur Entwicklung, Herstellung oder Vermarktung eines Programms mit einer im Wesentlichen übernommenen Ausdrucksform und nicht für sonstige Rechtsverletzungen verwendet oder unbefugt an Dritte weitergegeben werden.
+
+
+7. URHEBER-, MARKEN- UND HERKUNFTSHINWEISE
+
+Urheberrechtsvermerke, Markenhinweise, Logos, Signaturen, Versionsangaben und Herkunftskennzeichnungen dürfen nicht entfernt, verdeckt, verändert oder durch eigene Angaben ersetzt werden.
+
+Die Bezeichnungen „Crazy_Batto“, „Team Alpha“ und „Batto OBS Tool“ sowie die dazugehörigen Logos und Gestaltungselemente dürfen ohne ausdrückliche Zustimmung nicht für eigene Produkte oder zu Werbezwecken verwendet werden.
+
+Es darf insbesondere nicht der Eindruck erweckt werden, ein fremdes Produkt stamme von Crazy_Batto / Team Alpha oder sei offiziell genehmigt, unterstützt oder veröffentlicht worden.
+
+
+8. DRITTSOFTWARE UND EXTERNE SCHNITTSTELLEN
+
+OBS Studio, Twitch, TikTok, YouTube, Microsoft Windows und andere erwähnte Produkte, Dienste und Marken gehören ihren jeweiligen Rechteinhabern.
+
+Batto OBS Tool ist kein offizielles Produkt dieser Anbieter und steht nicht automatisch mit ihnen in einer geschäftlichen, technischen oder rechtlichen Verbindung.
+
+Einzelne Funktionen können installierte Drittsoftware, Benutzerkonten, Berechtigungen, Zugangsdaten oder externe Schnittstellen voraussetzen. Für enthaltene Drittanbieter-Komponenten gelten gegebenenfalls deren eigene Lizenzbedingungen vorrangig.
+
+Änderungen, Einschränkungen oder Abschaltungen externer Dienste und Schnittstellen liegen außerhalb des Einflussbereichs des Herausgebers.
+
+
+9. ZULÄSSIGE VERWENDUNG
+
+Das Programm darf nicht für rechtswidrige Zwecke, zur Verletzung fremder Rechte, zur Umgehung von Plattformschutzmaßnahmen oder entgegen den Nutzungsbedingungen angebundener Drittanbieter eingesetzt werden.
+
+Der Nutzer ist selbst dafür verantwortlich, dass seine Verwendung des Programms den geltenden Gesetzen sowie den Bedingungen der verwendeten Plattformen und Dienste entspricht.
+
+
+10. LOKALE DATEN UND ZUGANGSDATEN
+
+Profile, Layouts und Programmeinstellungen werden grundsätzlich lokal im jeweiligen Windows-Benutzerprofil gespeichert, soweit innerhalb des Programms nichts anderes angegeben wird.
+
+Gespeicherte OBS-Zugangsdaten werden in der Windows-Version mittels Windows DPAPI geschützt. Reguläre Exportdateien enthalten kein gespeichertes OBS-Passwort.
+
+Für Zugangsdaten, Inhalte oder Informationen, die an verbundene Drittanbieter übermittelt werden, gelten zusätzlich die Datenschutz- und Nutzungsbedingungen des jeweiligen Anbieters.
+
+
+11. MESSWERTE UND EMPFEHLUNGEN
+
+Soweit das Programm Funktionen zur Anzeige von Hardware-, Netzwerk-, Streaming- oder OBS-Werten enthält, hängen deren Verfügbarkeit und Genauigkeit von Windows, installierten Treibern, OBS Studio, angeschlossener Hardware und externen Schnittstellen ab.
+
+Nicht abrufbare Werte können als „Nicht verfügbar“ angezeigt werden. Angezeigte Empfehlungen und Hinweise sind unverbindliche Vorschläge. Änderungen an OBS oder anderen Programmen werden nur aufgrund einer erkennbaren und vom Nutzer ausgelösten Aktion vorgenommen.
+
+
+12. SICHERUNGEN, UPDATES UND DEINSTALLATION
+
+Vor Updates, Reparaturen oder der Deinstallation sollen Profile, Layouts und Konfigurationen gesichert beziehungsweise exportiert werden.
+
+Soweit gesetzlich zulässig und technisch vorgesehen, kann die Deinstallation anbieten, lokale Benutzerdaten entweder zu behalten oder zu entfernen.
+
+Updates, Erweiterungen und neue Versionen können ebenfalls diesen Bedingungen unterliegen. Ein Anspruch auf bestimmte Updates, Funktionen, Supportleistungen oder eine dauerhafte Weiterentwicklung besteht nur, wenn dies ausdrücklich zugesagt wurde.
+
+
+13. GEWÄHRLEISTUNG UND HAFTUNG
+
+Das Programm wird nach bestem Wissen entwickelt und bereitgestellt. Eine Garantie für einen jederzeit unterbrechungsfreien oder fehlerfreien Betrieb, die Kompatibilität mit jeder Hard- und Software oder den dauerhaften Fortbestand externer Schnittstellen wird nicht übernommen.
+
+Der Lizenzgeber haftet uneingeschränkt:
+
+- bei Vorsatz und grober Fahrlässigkeit,
+- bei Schäden aus der Verletzung von Leben, Körper oder Gesundheit,
+- aufgrund ausdrücklich übernommener Garantien,
+- nach zwingenden gesetzlichen Haftungsvorschriften.
+
+Bei leicht fahrlässiger Verletzung einer wesentlichen Vertragspflicht ist die Haftung, soweit gesetzlich zulässig, auf den vorhersehbaren und vertragstypischen Schaden begrenzt. Im Übrigen ist die Haftung für leichte Fahrlässigkeit ausgeschlossen, soweit dies gesetzlich zulässig ist.
+
+Zwingende gesetzliche Gewährleistungs-, Verbraucher- und Haftungsrechte bleiben vollständig unberührt.
+
+
+14. FOLGEN VON LIZENZVERLETZUNGEN
+
+Bei einem erheblichen Verstoß gegen diese Bedingungen, insbesondere gegen die Bestimmungen zum Kopieren, Nachbauen, Reverse Engineering oder zur unbefugten Weitergabe, endet das eingeräumte Nutzungsrecht im gesetzlich zulässigen Umfang.
+
+Nach Beendigung des Nutzungsrechts muss die Nutzung eingestellt werden. Unzulässig angefertigte Kopien und extrahierte Bestandteile sind zu löschen, soweit keine zwingende gesetzliche Aufbewahrungspflicht besteht.
+
+Der Lizenzgeber behält sich die Geltendmachung gesetzlicher Ansprüche vor. Dazu können insbesondere Unterlassungs-, Auskunfts-, Beseitigungs- und Schadensersatzansprüche gehören.
+
+
+15. SCHLUSSBESTIMMUNGEN
+
+Es gilt das Recht der Bundesrepublik Deutschland unter Ausschluss des UN-Kaufrechts. Zwingende Verbraucherschutzvorschriften des Staates, in dem der Nutzer seinen gewöhnlichen Aufenthalt hat, bleiben unberührt.
+
+Ein Gerichtsstand wird nur vereinbart, soweit dies gesetzlich zulässig ist.
+
+Sollte eine einzelne Bestimmung dieser Bedingungen vollständig oder teilweise unwirksam sein oder werden, bleiben die übrigen Bestimmungen davon unberührt. Anstelle der unwirksamen Bestimmung gelten die gesetzlichen Vorschriften.
+
+
+Herausgeber und Lizenzgeber: Crazy_Batto / Team Alpha
+Produkt: Batto OBS Tool
+Lizenzstand: 10. September 2026
+Kontakt beziehungsweise offizielle Bezugsquelle:
+https://github.com/dannymeienbrock99-prog/Multi-Chat

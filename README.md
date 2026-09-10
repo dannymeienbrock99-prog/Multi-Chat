@@ -113,12 +113,23 @@ Die bisherigen 1.1-Funktionen bleiben die UI-Basis und werden schrittweise auf d
 - keine Dummy-Erfolgsmeldungen für nicht autorisierte Plattformaktionen
 - FFmpeg nur mit Argument-Arrays über `spawn`, nie über frei zusammengesetzte Shell-Strings
 
+## Geschützter Windows-Installer
+
+Der Windows-Installer zeigt vor der Installation die deutschen Nutzungs- und Lizenzbedingungen und verlangt danach den privaten Installationsschlüssel von Crazy_Batto / Team Alpha. Leerzeichen und normale Bindestriche werden bei der Eingabe ignoriert. Der eingegebene Schlüssel wird ausschließlich lokal geprüft und nicht gespeichert.
+
+Der Klartextschlüssel befindet sich weder im Quellcode noch im GitHub-Repository. Eingecheckt ist nur ein gesalzener, 4096-fach berechneter SHA-512-Prüfwert. Der Installer nutzt das Michelle/Sarah-Motiv als Willkommens- und Kopf-Grafik; das Rosenmotiv bleibt das kleine Setup-Symbol.
+
+Unbeaufsichtigte interne Installationen benötigen die beiden nur für den jeweiligen Prozess gesetzten Umgebungsvariablen `BATTO_INSTALL_KEY` und `BATTO_ACCEPT_LICENSE=YES`. Der Schlüssel wird nicht als Kommandozeilenparameter unterstützt, damit er nicht in Prozesslisten oder normalen Build-Logs erscheint.
+
+Die vollständigen Bedingungen stehen in [`build/license_de.txt`](build/license_de.txt). Ein fester Offline-Installationsschlüssel ist eine Zugangshürde, aber keine manipulationssichere Online-Aktivierung.
+
 ## Tests
 
 ```bat
 npm install
 npm run check
 npm run smoke
+npm run test:installer
 npm start
 ```
 

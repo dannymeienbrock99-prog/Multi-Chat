@@ -19,7 +19,7 @@ app.whenReady().then(async()=>{
       await new Promise(r=>setTimeout(r,100));
     }
     assert(state);
-    assert.equal(app.getVersion(),'2.1.4');
+    assert.equal(app.getVersion(),'2.1.5');
     assert.equal(state.config.schemaVersion,expected.schemaVersion);
     assert.equal(state.config.autoBroadcast.items.length,expected.broadcasts);
     assert.equal(state.config.autoBroadcast.items[0].name,expected.broadcastName);

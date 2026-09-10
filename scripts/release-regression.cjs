@@ -23,5 +23,5 @@ const {BroadcastService}=require('../src/core/broadcast/service.cjs');
  const blocked=await e.executeRule({id:'live',onlyWhenLive:true,actions:[{type:'chat',text:'bad'}]}, {}, 'event');assert.equal(blocked.skipped,'not-live');
  await e.executeOne({type:'tts',text:'Test'},{});assert.equal(tts.volume,.37);assert.equal(tts.outputDeviceId,'selected');
  const failing=new ActionEngine({getConfig:()=>cfg,onHttp:async()=>({ok:false,status:500})});assert.equal((await failing.execute([{type:'http',url:'http://localhost'}])).ok,false);
- console.log('2.1.4 regression: global throttling, service CRUD/reload, platform commands, aliases, LIVE gating, TTS config and truthful errors: OK');
+ console.log('2.1.5 regression: global throttling, service CRUD/reload, platform commands, aliases, LIVE gating, TTS config and truthful errors: OK');
 })().catch(e=>{console.error(e);process.exitCode=1});
