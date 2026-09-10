@@ -1,6 +1,6 @@
 const assert = require('assert');
 const { DEFAULT_CONFIG, migrateConfig } = require('../src/core/config-store.cjs');
-const { validateConfig } = require('../src/core/settings/schema.cjs');
+const { validateConfig, isTikFinityWidgetUrl } = require('../src/core/settings/schema.cjs');
 const { ChatCore, normalizeMessage } = require('../src/core/chat-core.cjs');
 const { EventCore } = require('../src/core/events/event-core.cjs');
 const { normalizeChat, normalizeEvent } = require('../src/core/events/normalizer.cjs');
@@ -11,9 +11,10 @@ const cfg = structuredClone(DEFAULT_CONFIG);
 assert.equal(cfg.http.port, 17777);
 assert.equal(cfg.obs.url, 'ws://127.0.0.1:4455');
 assert.equal(cfg.multiChat.maxMessages, 500);
+assert.equal(cfg.platforms.tikfinity.webWidgets[0].url, 'https://tikfinity.zerody.one/widget/chat?cid=676051');
+assert.equal(isTikFinityWidgetUrl(cfg.platforms.tikfinity.webWidgets[0].url), true);
+assert.equal(isTikFinityWidgetUrl('https://example.com/widget/chat?cid=676051'), false);
 assert.equal(validateConfig(cfg).ok, true);
-assert.ok(Array.isArray(cfg.platforms.tikfinity.widgets));
-assert.equal(cfg.platforms.tikfinity.widgets[0]?.url, 'https://tikfinity.zerody.one/widget/chat?cid=676051');
 
 const migrated = migrateConfig({ version: 5, http: { port: 8787 }, multiChat: { maxMessages: 5000 }, backup: { keep: 10 } });
 assert.equal(migrated.version, 7);
@@ -21,7 +22,12 @@ assert.equal(migrated.schemaVersion, 5);
 assert.equal(migrated.http.port, 17777);
 assert.equal(migrated.multiChat.maxMessages, 500);
 assert.equal(migrated.backup.keep, 5);
-assert.ok(Array.isArray(migrated.platforms.tikfinity.widgets));
+const migratedHttps = migrateConfig({ schemaVersion:4, platforms:{tikfinity:{url:'https://tikfinity.zerody.one/widget/chat?cid=legacy'}} });
+assert.equal(migratedHttps.platforms.tikfinity.url, 'ws://127.0.0.1:21213/');
+assert.equal(migratedHttps.platforms.tikfinity.webWidgets[0].url, 'https://tikfinity.zerody.one/widget/chat?cid=legacy');
+const migratedStagedShape = migrateConfig({ schemaVersion:5, platforms:{tikfinity:{url:'ws://127.0.0.1:21213/',widgets:[{id:'legacy-follow',name:'Alter Follower',type:'follow',url:'https://tikfinity.zerody.one/widget/follow?cid=legacy',enabled:true}]}} });
+assert.equal(migratedStagedShape.platforms.tikfinity.webWidgets[0].eventType, 'follow');
+assert.equal(migratedStagedShape.platforms.tikfinity.webWidgets[0].url, 'https://tikfinity.zerody.one/widget/follow?cid=legacy');
 
 const core = new ChatCore(cfg);
 const msg = normalizeMessage({ platform: 'TikTok', username: 'User', text: 'Hallo' });

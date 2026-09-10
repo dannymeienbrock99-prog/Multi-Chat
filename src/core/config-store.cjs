@@ -2,10 +2,17 @@ const { fromLegacy } = require('./broadcast/scheduler.cjs');
 const fs = require('fs');
 const path = require('path');
 const { atomicWrite } = require('./storage/atomic-file.cjs');
-const { assertValidConfig, validateConfig } = require('./settings/schema.cjs');
+const { assertValidConfig, validateConfig, isTikFinityWidgetUrl } = require('./settings/schema.cjs');
 
-const CURRENT_VERSION = 6;
-const CURRENT_SCHEMA_VERSION = 4;
+const CURRENT_VERSION = 7;
+const CURRENT_SCHEMA_VERSION = 5;
+const DEFAULT_TIKFINITY_WIDGETS = [{
+  id:'tikfinity-chat-676051',
+  name:'TikFinity Chat',
+  eventType:'chat',
+  url:'https://tikfinity.zerody.one/widget/chat?cid=676051',
+  enabled:true
+}];
 
 const DEFAULT_CONFIG = {
   version: CURRENT_VERSION,
@@ -25,7 +32,7 @@ const DEFAULT_CONFIG = {
   cohost: { enabled:true, format:'tiktok', places:4, slots:[{label:'Gast 1',source:''},{label:'Gast 2',source:''},{label:'Gast 3',source:''},{label:'Gast 4',source:''}] },
   platforms: {
     axelchat:{ enabled:true, autoConnect:false, url:'ws://127.0.0.1:8356', reconnectSeconds:5 },
-    tikfinity:{ enabled:true, autoConnect:false, url:'ws://127.0.0.1:21213/', reconnectSeconds:5 },
+    tikfinity:{ enabled:true, autoConnect:false, url:'ws://127.0.0.1:21213/', reconnectSeconds:5, webWidgets:DEFAULT_TIKFINITY_WIDGETS },
     twitch:{ enabled:true, autoConnect:false, channel:'crazy_batto', mode:'readonly' },
     youtube:{ enabled:true, autoConnect:false, liveChatId:'', apiKey:'', pollMs:2500 },
     cng:{ enabled:true, status:'overlay-ready', creatorId:'210048', alertOverlayUrl:'https://cng-plattform.com/alert-overlay?creatorId=210048&alertTts=1&chatTts=0', ghostChatUrl:'https://cng-plattform.com/chat-popout/210048?mode=ghost', autoOpenGhost:false, localBroadcastEnabled:true }
@@ -100,6 +107,46 @@ function migrateSchema3To4(input) {
   cfg.appearance={...(cfg.appearance || {}),theme:'marble-gold'};
   return cfg;
 }
+
+function fromLegacyTikFinityWidgets(tikfinity) {
+  const source=Array.isArray(tikfinity?.widgets) ? tikfinity.widgets : [];
+  const used=new Set();
+  return source.slice(0,24).flatMap((widget,index)=>{
+    if (!isTikFinityWidgetUrl(widget?.url)) return [];
+    let id=/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(String(widget?.id || '')) ? String(widget.id) : `tikfinity-imported-${index+1}`;
+    const base=id;
+    for (let suffix=2; used.has(id); suffix+=1) id=`${base.slice(0,Math.max(1,62-String(suffix).length))}-${suffix}`;
+    used.add(id);
+    const eventType=String(widget?.eventType || widget?.type || 'custom');
+    return [{
+      id,
+      name:String(widget?.name || 'TikFinity Widget').trim().slice(0,80) || 'TikFinity Widget',
+      eventType:['chat','follow','gift','like','share','subscribe','goal','ranking','custom'].includes(eventType) ? eventType : 'custom',
+      url:String(widget.url).trim(),
+      enabled:widget.enabled !== false
+    }];
+  });
+}
+
+function migrateSchema4To5(input) {
+  const cfg=clone(input || {});
+  cfg.schemaVersion=5;
+  cfg.platforms={...(cfg.platforms || {})};
+  const tikfinity={...(cfg.platforms.tikfinity || {})};
+  const legacyHttps=[tikfinity.url,tikfinity.chatWidgetUrl,tikfinity.widgetUrl].map((value)=>String(value || '').trim()).find(isTikFinityWidgetUrl) || '';
+  const widgets=Array.isArray(tikfinity.webWidgets) ? tikfinity.webWidgets : fromLegacyTikFinityWidgets(tikfinity);
+  if (legacyHttps) {
+    const alreadySaved=widgets.some((widget)=>String(widget?.url || '')===legacyHttps);
+    let id='tikfinity-imported-widget';
+    for (let suffix=2; widgets.some((widget)=>widget?.id===id); suffix+=1) id=`tikfinity-imported-widget-${suffix}`;
+    if (!alreadySaved) widgets.push({id,name:'TikFinity Widget',eventType:'custom',url:legacyHttps,enabled:true});
+    tikfinity.url='ws://127.0.0.1:21213/';
+  }
+  tikfinity.webWidgets=widgets.length ? widgets : clone(DEFAULT_TIKFINITY_WIDGETS);
+  cfg.platforms.tikfinity=tikfinity;
+  return cfg;
+}
+
 function migrateConfig(input) {
   let source = input && typeof input === 'object' ? clone(input) : {};
   let schema = Number(source.schemaVersion || 1);
@@ -108,10 +155,15 @@ function migrateConfig(input) {
     if (schema === 1) source = migrateSchema1To2(source);
     else if (schema === 2) source = migrateSchema2To3(source);
     else if (schema === 3) source = migrateSchema3To4(source);
+    else if (schema === 4) source = migrateSchema4To5(source);
     else throw new Error(`Keine Settings-Migration von Schema ${schema} verfügbar.`);
     schema = Number(source.schemaVersion);
   }
   if (schema > CURRENT_SCHEMA_VERSION) throw new Error(`Settings-Schema ${schema} ist neuer als unterstützt (${CURRENT_SCHEMA_VERSION}).`);
+  const currentTikfinity=source.platforms?.tikfinity;
+  if (currentTikfinity && !Array.isArray(currentTikfinity.webWidgets) && Array.isArray(currentTikfinity.widgets)) {
+    source.platforms={...source.platforms,tikfinity:{...currentTikfinity,webWidgets:fromLegacyTikFinityWidgets(currentTikfinity)}};
+  }
   const merged = deepMerge(DEFAULT_CONFIG, source);
   merged.version = CURRENT_VERSION;
   merged.schemaVersion = CURRENT_SCHEMA_VERSION;
@@ -216,4 +268,4 @@ class ConfigStore {
   importFrom(filePath) { const candidate=migrateConfig(this.readJson(filePath)); return this.commit(candidate); }
 }
 
-module.exports={ConfigStore,DEFAULT_CONFIG,CURRENT_VERSION,CURRENT_SCHEMA_VERSION,deepMerge,migrateConfig,migrateSchema1To2,migrateSchema2To3,stripUnknown};
+module.exports={ConfigStore,DEFAULT_CONFIG,CURRENT_VERSION,CURRENT_SCHEMA_VERSION,DEFAULT_TIKFINITY_WIDGETS,deepMerge,migrateConfig,migrateSchema1To2,migrateSchema2To3,migrateSchema4To5,stripUnknown};
