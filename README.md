@@ -69,7 +69,8 @@ Die bisherigen 1.1-Funktionen bleiben die UI-Basis und werden schrittweise auf d
 - Multi-Chat TikTok / Twitch / YouTube / CNG
 - Rechtsklick-Moderation und Verlauf
 - TikFinity Local Bridge und AxelChat
-- dauerhaft gespeicherte TikFinity-HTTPS-Browser-Widgets für Chat, Follower, Gifts, Likes, Shares, Abos, Ziele, Ranglisten und eigene Anzeigen
+- eigenes Eingabefeld für den TikFinity-Chat-Link; HTTP wird auf HTTPS angehoben und der Link dauerhaft gespeichert
+- zusätzliche TikFinity-Browser-Widgets für Follower, Gifts, Likes, Shares, Abos, Ziele, Ranglisten und eigene Anzeigen
 - stabile lokale TikFinity-OBS-URLs unter `http://127.0.0.1:17777/overlay/tikfinity/<widget-id>`
 - originale Plattform-Logos an TikTok-, Twitch-, YouTube- und CNG-Nachrichten im Multi-Chat und Chat-Overlay
 - Twitch Nur-Lesen

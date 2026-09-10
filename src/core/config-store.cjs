@@ -6,13 +6,7 @@ const { assertValidConfig, validateConfig, isTikFinityWidgetUrl } = require('./s
 
 const CURRENT_VERSION = 7;
 const CURRENT_SCHEMA_VERSION = 5;
-const DEFAULT_TIKFINITY_WIDGETS = [{
-  id:'tikfinity-chat-676051',
-  name:'TikFinity Chat',
-  eventType:'chat',
-  url:'https://tikfinity.zerody.one/widget/chat?cid=676051',
-  enabled:true
-}];
+const DEFAULT_TIKFINITY_WIDGETS = [];
 
 const DEFAULT_CONFIG = {
   version: CURRENT_VERSION,
