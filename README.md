@@ -74,6 +74,7 @@ Die bisherigen 1.1-Funktionen bleiben die UI-Basis und werden schrittweise auf d
 - stabile lokale TikFinity-OBS-URLs unter `http://127.0.0.1:17777/overlay/tikfinity/<widget-id>`
 - originale Plattform-Logos an TikTok-, Twitch-, YouTube- und CNG-Nachrichten im Multi-Chat und Chat-Overlay
 - austauschbares Chatfenster-Bild: eigenes PNG/JPG/WebP hochladen, Vorschau, Abdunklung, Anpassung und Position einstellen oder jederzeit das Crazy_Batto-Motiv aus dem Social-Media-Set wiederherstellen
+- eigenes Icon für „Lokaler Chat / Overlay“ hochladen; die App schneidet es mittig quadratisch zu, erzeugt automatisch ein 128×128-PNG und verwendet es im Multi-Chat sowie im OBS-Chat-Overlay
 - Twitch Nur-Lesen
 - YouTube Live-Chat
 - CNG Overlay-/Ghost-Integration

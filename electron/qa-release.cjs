@@ -1,5 +1,5 @@
 'use strict';
-const {app,BrowserWindow,dialog}=require('electron');
+const {app,BrowserWindow,dialog,nativeImage}=require('electron');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),crypto=require('node:crypto');
 module.exports=async function({win,run,waitFor,checks,dir,profile}){
   assert.equal(app.getVersion(),'2.1.3');
@@ -65,6 +65,34 @@ module.exports=async function({win,run,waitFor,checks,dir,profile}){
   assert.match(await run(`return getComputedStyle(document.querySelector('.chat-card')).backgroundImage;`),/chat-background-/);
   await run(`document.querySelector('#chatBackgroundSettings').scrollIntoView({block:'start'});`);await capture('04-Chatfenster-Bild');
   checks.push('Chat image: bundled Crazy_Batto preset, native upload, reset cleanup, preview, fit, position, darkness and main-window display');
+  await waitFor(()=>run(`return !!document.querySelector('#stLocalIconUpload')&&!!document.querySelector('#localChatIconPreview');`),'Local chat icon settings');
+  assert.equal((await run('return await window.batto.getState();')).config.appearance.chatIcons.local.mode,'default');
+  const uploadLocalIconFixture=async()=>{
+    dialog.showOpenDialog=async()=>({canceled:false,filePaths:[chatFixture]});
+    try { await run(`await document.querySelector('#stLocalIconUpload').onclick();`); }
+    finally { dialog.showOpenDialog=originalOpenDialog; }
+    return (await run('return await window.batto.getState();')).config.appearance.chatIcons.local.customPath;
+  };
+  const firstLocalIcon=await uploadLocalIconFixture();
+  assert.equal(fs.existsSync(firstLocalIcon),true);
+  assert.deepEqual(nativeImage.createFromPath(firstLocalIcon).getSize(),{width:128,height:128});
+  await run(`setView('dashboard');await window.batto.sendMessage({platform:'local',text:'QA LOCAL ICON'});`);
+  await waitFor(()=>run(`const image=document.querySelector('.platform-icon.internal img');return !!image&&image.complete&&image.naturalWidth===128&&image.naturalHeight===128;`),'Local icon in Multi-Chat');
+  const localIconResponse=await fetch('http://127.0.0.1:17777/assets/custom/local-chat-icon.png');
+  assert.equal(localIconResponse.status,200);assert.match(localIconResponse.headers.get('content-type'),/^image\/png/);assert.ok((await localIconResponse.arrayBuffer()).byteLength>1000);
+  const overlayIconWindow=new BrowserWindow({show:false,width:900,height:500});
+  await overlayIconWindow.loadURL('http://127.0.0.1:17777/overlay/chat');
+  await run(`await window.batto.sendMessage({platform:'local',text:'QA LOCAL OVERLAY ICON'});`);
+  await waitFor(()=>overlayIconWindow.webContents.executeJavaScript(`(()=>{const image=document.querySelector('.platform.internal img');return !!image&&image.complete&&image.naturalWidth===128&&image.naturalHeight===128})()`),'Local icon in OBS overlay');
+  fs.writeFileSync(path.join(dir,'05-Lokaler-Chat-Icon-Overlay.png'),(await overlayIconWindow.webContents.capturePage()).toPNG());
+  overlayIconWindow.close();
+  await run(`setView('settings');window.confirm=()=>true;await document.querySelector('#stLocalIconReset').onclick();`);
+  await waitFor(()=>run(`return S.config.appearance.chatIcons.local.mode==='default';`),'Reset local chat icon');
+  assert.equal(fs.existsSync(firstLocalIcon),false);assert.equal((await fetch('http://127.0.0.1:17777/assets/custom/local-chat-icon.png')).status,404);
+  const customLocalIcon=await uploadLocalIconFixture();
+  assert.equal(fs.existsSync(customLocalIcon),true);assert.deepEqual(nativeImage.createFromPath(customLocalIcon).getSize(),{width:128,height:128});
+  await run(`document.querySelector('#localChatIconSettings').scrollIntoView({block:'start'});`);await capture('05-Lokaler-Chat-Icon-Einstellung');
+  checks.push('Local chat/overlay icon: native upload, automatic center crop to 128x128 PNG, preview, Multi-Chat, HTTP overlay, reset cleanup and re-upload');
   await waitFor(()=>run(`return [...document.querySelectorAll('#familyBranding img')].every(i=>i.complete&&i.naturalWidth>0);`),'Sarah and Michelle decoded');
   await run(`document.querySelector('#familyBranding').scrollIntoView({block:'start'});`);await capture('04-Einstellungen-Logos');
   await run(`document.querySelector('#settingsAudio').scrollIntoView({block:'center'});`);await capture('05-TTS-Ausgabe');
@@ -110,8 +138,9 @@ module.exports=async function({win,run,waitFor,checks,dir,profile}){
   const saved=JSON.parse(fs.readFileSync(path.join(profile,'Batto-OBS-Tool/settings.json'),'utf8'));
   assert.equal(saved.schemaVersion,5);assert.equal(saved.autoBroadcast.items.length,1);assert.equal(saved.autoBroadcast.items[0].name,'QA Broadcast B');assert.equal(saved.tts.volume,.37);
   assert.equal(saved.appearance.chatBackground.mode,'custom');assert.equal(saved.appearance.chatBackground.customName,'crazy-batto-chat-default.jpg');assert.equal(saved.appearance.chatBackground.fit,'cover');assert.equal(saved.appearance.chatBackground.darkness,.63);assert.equal(fs.existsSync(saved.appearance.chatBackground.customPath),true);
+  assert.equal(saved.appearance.chatIcons.local.mode,'custom');assert.equal(saved.appearance.chatIcons.local.customName,'crazy-batto-chat-default.jpg');assert.equal(fs.existsSync(saved.appearance.chatIcons.local.customPath),true);assert.deepEqual(nativeImage.createFromPath(saved.appearance.chatIcons.local.customPath).getSize(),{width:128,height:128});
   const tikfinityChatUrl='https://tikfinity.zerody.one/widget/chat?cid=676051';assert.equal(saved.platforms.tikfinity.webWidgets.some(widget=>widget.url===tikfinityChatUrl),true);
-  fs.writeFileSync(path.join(dir,'resume-expectations.json'),JSON.stringify({schemaVersion:5,broadcasts:1,broadcastName:'QA Broadcast B',volume:.37,tikfinityChatUrl,chatBackgroundName:'crazy-batto-chat-default.jpg',chatBackgroundPath:saved.appearance.chatBackground.customPath}));
+  fs.writeFileSync(path.join(dir,'resume-expectations.json'),JSON.stringify({schemaVersion:5,broadcasts:1,broadcastName:'QA Broadcast B',volume:.37,tikfinityChatUrl,chatBackgroundName:'crazy-batto-chat-default.jpg',chatBackgroundPath:saved.appearance.chatBackground.customPath,localChatIconName:'crazy-batto-chat-default.jpg',localChatIconPath:saved.appearance.chatIcons.local.customPath}));
   await run(`setView('start');`);
   checks.push('No renderer errors; persisted schema-5 settings ready for independent restart test');
 };

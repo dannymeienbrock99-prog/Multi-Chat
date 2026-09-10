@@ -9,6 +9,7 @@ const { OverlayServer } = require('../src/core/overlay-server.cjs');
 const { FFmpegService } = require('../src/core/media/ffmpeg-service.cjs');
 const { validateMediaFile } = require('../src/core/alerts/media-validator.cjs');
 const { validateChatBackgroundFile } = require('../src/core/media/chat-background.cjs');
+const { validateLocalChatIconSource } = require('../src/core/media/local-chat-icon.cjs');
 
 (async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'batto-runtime21-'));
@@ -45,6 +46,16 @@ const { validateChatBackgroundFile } = require('../src/core/media/chat-backgroun
     assert.equal(missingWidget.status,404);
     const logo = await fetch('http://127.0.0.1:17777/assets/platforms/tiktok.svg').then((r)=>r.text());
     assert.match(logo,/<svg/);
+    assert.equal((await fetch('http://127.0.0.1:17777/assets/custom/local-chat-icon.png')).status,404);
+    const managedLocalIcon=path.join(configStore.imageDir,'runtime-local-chat-icon.png');
+    fs.copyFileSync(path.join(__dirname,'..','src','assets','icon.png'),managedLocalIcon);
+    configStore.merge({appearance:{chatIcons:{local:{mode:'custom',customPath:managedLocalIcon,customName:'Runtime Local.png'}}}});
+    const localIconResponse=await fetch('http://127.0.0.1:17777/assets/custom/local-chat-icon.png');
+    assert.equal(localIconResponse.status,200);
+    assert.equal(localIconResponse.headers.get('content-type'),'image/png');
+    assert.ok((await localIconResponse.arrayBuffer()).byteLength>1000);
+    const chatOverlayHtml=await fetch('http://127.0.0.1:17777/overlay/chat').then((r)=>r.text());
+    assert.match(chatOverlayHtml,/internal:\"\/assets\/custom\/local-chat-icon\.png\"/);
     await freeOverlay.stop();
 
     // FFmpeg missing is DEGRADED, not a crash; detected FFmpeg is CONNECTED.
@@ -59,8 +70,10 @@ const { validateChatBackgroundFile } = require('../src/core/media/chat-backgroun
     const validation = validateMediaFile(fakePng);
     assert.equal(validation.ok, false);
     assert.equal(validateChatBackgroundFile(fakePng).ok, false);
+    assert.equal(validateLocalChatIconSource(fakePng).ok, false);
     const shippedChatImage = path.join(__dirname,'..','src','assets','source','crazy-batto-chat-default.jpg');
     assert.equal(validateChatBackgroundFile(shippedChatImage).ok, true);
+    assert.equal(validateLocalChatIconSource(shippedChatImage).ok, true);
 
     console.log('Batto OBS Tool 2.1 runtime integration: OK');
   } finally {

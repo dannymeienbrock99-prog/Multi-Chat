@@ -49,7 +49,7 @@ const PLATFORM_META = Object.freeze({
   twitch: { label:'Twitch', logo:'../assets/platforms/twitch.svg' },
   youtube: { label:'YouTube', logo:'../assets/platforms/youtube.svg' },
   cng: { label:'CNG', logo:'https://cng-plattform.com/manus-storage/favicon_e3fccd67.png' },
-  internal: { label:'Lokal', logo:'' }
+  internal: { label:'Lokaler Chat / Overlay', logo:'' }
 });
 const TIKFINITY_WIDGET_TYPES = Object.freeze([
   ['chat','Chat'],['follow','Neue Follower'],['gift','Geschenke'],['like','Likes'],['share','Shares'],
@@ -62,8 +62,10 @@ function platformKey(platform) {
 }
 
 function platformIcon(platform) {
-  const meta=PLATFORM_META[platformKey(platform)];
-  return meta.logo ? `<img src="${meta.logo}" alt="${meta.label}" title="${meta.label}">` : '•';
+  const key=platformKey(platform);
+  const meta=PLATFORM_META[key];
+  const logo=key === 'internal' ? String(S.assets?.localChatIcon?.url || '') : meta.logo;
+  return logo ? `<img src="${esc(logo)}" alt="${esc(meta.label)}" title="${esc(meta.label)}">` : '•';
 }
 
 function normalizeTikFinityWidgetUrl(value) {
@@ -752,7 +754,14 @@ function renderSettingsModule() {
   const chatAsset = S.assets?.chatBackground || {};
   const chatImageName = chatBackground.mode === 'custom' ? (chatBackground.customName || 'Eigenes Bild') : 'Crazy_Batto Social-Media-Motiv';
   const chatImageStatus = chatAsset.missing ? 'Eigene Datei fehlt – das Crazy_Batto-Motiv wird ersatzweise angezeigt.' : chatBackground.mode === 'custom' ? 'Eigenes Bild gespeichert' : 'Mitgeliefertes Motiv aus deinem Social-Media-Set';
+  const localIconConfig = a.chatIcons?.local || { mode:'default', customPath:'', customName:'' };
+  const localIconAsset = S.assets?.localChatIcon || { mode:'default', url:'', name:'Standardpunkt', width:128, height:128 };
+  const localIconName = localIconConfig.mode === 'custom' ? (localIconConfig.customName || 'Eigenes Icon') : 'Standardpunkt';
+  const localIconStatus = localIconAsset.missing ? 'Die gespeicherte Datei fehlt – vorübergehend wird der Standardpunkt angezeigt.' : localIconConfig.mode === 'custom' ? 'Eigenes Icon aktiv' : 'Noch kein eigenes Icon ausgewählt';
+  const localIconPreview = localIconAsset.url ? `<img src="${esc(localIconAsset.url)}" alt="Vorschau Lokaler Chat / Overlay">` : '<span aria-hidden="true">•</span>';
   $('#settingsModule').innerHTML = section('Allgemein', `<div class="form-grid"><div><label>Anzeigename</label><input id="stName" value="${esc(g.displayName)}"></div><div><label>UI-Skalierung</label><input id="stScale" type="number" min="0.8" max="1.4" step="0.05" value="${a.uiScale || 1}"></div></div><label class="check"><input id="stBackground" type="checkbox" ${a.programBackground === false ? '' : 'checked'}> Programm-Hintergrund verwenden</label><div><label>Hintergrund-Abdunklung</label><div class="range-row"><input id="stDarkness" type="range" min="0" max="70" value="${Math.round(Number(a.backgroundDarkness ?? .28) * 100)}"><span id="stDarknessLabel">${Math.round(Number(a.backgroundDarkness ?? .28) * 100)}%</span></div></div>`) + section('Chatfenster-Bild', `<div class="chat-background-settings" id="chatBackgroundSettings"><div class="chat-background-preview" id="chatBackgroundPreview" role="img" aria-label="Vorschau des Chatfenster-Bildes"><span>Vorschau</span></div><div><strong id="chatBackgroundName">${esc(chatImageName)}</strong><p id="chatBackgroundStatus">${esc(chatImageStatus)}</p><div class="toolbar"><button class="primary" id="stChatImageUpload">Eigenes Bild hochladen</button><button id="stChatImagePreset" ${chatBackground.mode === 'preset' ? 'disabled' : ''}>Crazy_Batto-Motiv verwenden</button></div><div class="form-grid three"><label class="check"><input id="stChatImageEnabled" type="checkbox" ${chatBackground.enabled === false ? '' : 'checked'}> Bild im Chatfenster anzeigen</label><label class="check"><input id="stChatImageMain" type="checkbox" ${chatBackground.showInMain ? 'checked' : ''}> Auch im Hauptfenster</label><label>Bildanpassung<select id="stChatImageFit"><option value="contain">Ganz anzeigen</option><option value="cover">Fenster ausfüllen</option></select></label><label>Position<select id="stChatImagePosition"><option value="center">Mitte</option><option value="left center">Links</option><option value="right center">Rechts</option></select></label></div><label>Abdunklung für lesbaren Chat <span id="stChatImageDarknessLabel">${Math.round(Number(chatBackground.darkness ?? .82) * 100)}%</span></label><div class="range-row"><input id="stChatImageDarkness" type="range" min="0" max="95" value="${Math.round(Number(chatBackground.darkness ?? .82) * 100)}"><span></span></div><div class="toolbar"><button class="primary" id="stChatImageSave">Chatbild-Einstellungen speichern</button></div><p class="composer-hint">PNG, JPG/JPEG oder WebP bis 20 MB. Das ausgewählte Bild wird sicher in die App kopiert und bleibt nach einem Neustart erhalten.</p></div></div>`) + section('Overlay / HTTP', `<div class="form-grid three"><div><label>Host</label><input id="stHost" value="${esc(h.host)}"></div><div><label>Port</label><input id="stPort" type="number" value="${h.port}"></div><div><label>Heartbeat Sekunden</label><input id="stHeartbeat" type="number" value="${h.heartbeatSeconds || 15}"></div></div><label class="check"><input id="stHttp" type="checkbox" ${h.enabled ? 'checked' : ''}> Overlay-Webserver aktiv</label>`) + section('Automatische Synchronisation / Zusatz-Einstellungen', `<label class="check"><input id="stSync" type="checkbox" ${sync.enabled !== false ? 'checked' : ''}> Änderungen sofort an laufende Module synchronisieren</label><div class="media-picker">${modules.map((module) => `<label class="media-check"><input type="checkbox" data-sync-module="${module}" ${sync.modules?.[module] === false ? '' : 'checked'}> ${esc(module)}</label>`).join('')}</div><p>Bei aktivierter Synchronisation werden gespeicherte Änderungen sofort in Dashboard, Overlays, Bridges, TTS, Commands, Events, Medien-Pools und Auto-Broadcast übernommen.</p>`) + section('Info', `<div class="info-card"><strong>Sarah Luna</strong><p>Ich danke Dir Für alles Sarah Luna Ich hab Dich Lieb Dein Bruder Crazy_Batto</p></div>`) + `<div class="toolbar"><button class="primary" id="stSave">Alles speichern & synchronisieren</button><button id="stOpen">Chat-Overlay öffnen</button></div>`;
+  const overlaySettingsSection = [...$('#settingsModule').children].find((item) => item.querySelector('h3')?.textContent === 'Overlay / HTTP');
+  overlaySettingsSection?.insertAdjacentHTML('beforebegin', section('Chat-Icons', `<div class="local-chat-icon-settings" id="localChatIconSettings"><div class="local-chat-icon-preview" id="localChatIconPreview">${localIconPreview}</div><div><strong>${esc(localIconName)}</strong><p id="localChatIconStatus">${esc(localIconStatus)}</p><div class="local-chat-icon-spec"><b>Lokaler Chat / Overlay</b><span>Ausgabe: 128 × 128 px</span><span>Anzeige im Multi-Chat: 19 × 19 px</span><span>Anzeige im OBS-Overlay: 22 × 22 px</span></div><div class="toolbar"><button class="primary" id="stLocalIconUpload">Bild hochladen</button><button id="stLocalIconReset" ${localIconConfig.mode === 'custom' ? '' : 'disabled'}>Standardpunkt verwenden</button></div><p class="composer-hint">PNG, JPG/JPEG oder WebP bis 20 MB. Das Bild wird automatisch mittig quadratisch zugeschnitten und als scharfes 128×128-PNG gespeichert.</p></div></div>`));
   $('#stChatImageFit').value = chatBackground.fit || 'contain';
   $('#stChatImagePosition').value = chatBackground.position || 'center';
   const updateChatPreview = () => {
@@ -784,6 +793,20 @@ function renderSettingsModule() {
   };
   $('#stChatImageSave').onclick = async () => {
     await saveAndSync({ appearance:{ ...a, chatBackground:{ ...chatBackground, enabled:$('#stChatImageEnabled').checked, showInMain:$('#stChatImageMain').checked, fit:$('#stChatImageFit').value, position:$('#stChatImagePosition').value, darkness:Number($('#stChatImageDarkness').value) / 100 } } }, 'Chatbild-Einstellungen gespeichert.');
+  };
+  $('#stLocalIconUpload').onclick = async () => {
+    const result = await api.importLocalChatIcon();
+    if (result.canceled) return;
+    if (!result.ok) return toast(result.error || 'Das lokale Chat-Icon konnte nicht geladen werden.', true);
+    S.config = result.config; S.assets.localChatIcon = result.asset; renderDashboard(); renderSettingsModule();
+    toast(`Lokales Chat-Icon als ${result.width} × ${result.height} px gespeichert.`);
+  };
+  $('#stLocalIconReset').onclick = async () => {
+    if (!confirm('Eigenes Icon für Lokaler Chat / Overlay entfernen?')) return;
+    const result = await api.resetLocalChatIcon();
+    if (!result.ok) return toast(result.error || 'Das lokale Chat-Icon konnte nicht zurückgesetzt werden.', true);
+    S.config = result.config; S.assets.localChatIcon = result.asset; renderDashboard(); renderSettingsModule();
+    toast('Für lokalen Chat und Overlay wird wieder der Standardpunkt verwendet.');
   };
   $('#stDarkness').oninput = () => { $('#stDarknessLabel').textContent = `${$('#stDarkness').value}%`; document.documentElement.style.setProperty('--background-darkness', String(Number($('#stDarkness').value) / 100)); };
   $('#stSave').onclick = async () => {
@@ -907,6 +930,12 @@ async function boot() {
     S.config = config;
     S.assets.chatBackground = asset;
     applyAppearance();
+    renderDashboard();
+    if (S.view !== 'dashboard') renderModule(S.view);
+  });
+  api.onLocalChatIconChanged?.(({ config, asset }) => {
+    S.config = config;
+    S.assets.localChatIcon = asset;
     renderDashboard();
     if (S.view !== 'dashboard') renderModule(S.view);
   });

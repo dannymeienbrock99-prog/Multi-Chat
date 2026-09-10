@@ -23,6 +23,7 @@ const { HealthService } = require('../src/core/health/health-service.cjs');
 const { AuditStore } = require('../src/core/storage/audit-store.cjs');
 const { FFmpegService } = require('../src/core/media/ffmpeg-service.cjs');
 const { validateChatBackgroundFile, isPathInside } = require('../src/core/media/chat-background.cjs');
+const { LOCAL_CHAT_ICON_SIZE, validateLocalChatIconSource } = require('../src/core/media/local-chat-icon.cjs');
 const { AxelChatAdapter } = require('../src/adapters/axelchat.cjs');
 const { TikFinityAdapter } = require('../src/adapters/tikfinity.cjs');
 const { TwitchAdapter } = require('../src/adapters/twitch.cjs');
@@ -188,6 +189,11 @@ function assetStatus() {
     const validation = validateChatBackgroundFile(chatBackground.customPath);
     if (!validation.ok) missing.push({ type:'chat-background', name:chatBackground.customName || 'Chatfenster-Bild', error:validation.error });
   }
+  const localIcon = cfg.appearance?.chatIcons?.local;
+  if (localIcon?.mode === 'custom') {
+    const asset = localChatIconAsset(cfg);
+    if (asset.missing) missing.push({ type:'local-chat-icon', name:localIcon.customName || 'Lokaler Chat / Overlay', error:asset.error });
+  }
   return { missing: missing.length, invalid: 0, items: missing.slice(0, 100) };
 }
 
@@ -351,7 +357,44 @@ function chatBackgroundAsset(cfg = currentConfig()) {
   return { mode:'preset', url:CHAT_BACKGROUND_PRESET_URL, name:'Crazy_Batto Social-Media-Motiv', missing:false };
 }
 
-function removeManagedChatBackground(filePath) {
+function configuredLocalChatIcon(cfg = currentConfig()) {
+  const selected = cfg.appearance?.chatIcons?.local || {};
+  if (selected.mode !== 'custom') return { ok:false, default:true };
+  if (!isPathInside(selected.customPath, configStore.imageDir)) return { ok:false, error:'Das lokale Chat-Icon liegt nicht im geschützten App-Bildordner.' };
+  const validation = validateLocalChatIconSource(selected.customPath);
+  if (!validation.ok) return validation;
+  if (validation.ext !== '.png') return { ok:false, error:'Das gespeicherte lokale Chat-Icon ist kein PNG.' };
+  const decoded = nativeImage.createFromPath(validation.path);
+  const size = decoded.getSize();
+  if (decoded.isEmpty() || size.width !== LOCAL_CHAT_ICON_SIZE || size.height !== LOCAL_CHAT_ICON_SIZE) return { ok:false, error:`Das lokale Chat-Icon muss ${LOCAL_CHAT_ICON_SIZE} × ${LOCAL_CHAT_ICON_SIZE} Pixel groß sein.` };
+  return { ...validation, width:size.width, height:size.height };
+}
+
+function localChatIconAsset(cfg = currentConfig()) {
+  const selected = cfg.appearance?.chatIcons?.local || {};
+  if (selected.mode === 'custom') {
+    const validation = configuredLocalChatIcon(cfg);
+    if (validation.ok) return { mode:'custom', url:pathToFileURL(validation.path).href, overlayUrl:'/assets/custom/local-chat-icon.png', name:selected.customName || path.basename(validation.path), width:LOCAL_CHAT_ICON_SIZE, height:LOCAL_CHAT_ICON_SIZE, missing:false };
+    return { mode:'default', url:'', overlayUrl:'', name:'Standardpunkt', width:LOCAL_CHAT_ICON_SIZE, height:LOCAL_CHAT_ICON_SIZE, missing:true, error:validation.error };
+  }
+  return { mode:'default', url:'', overlayUrl:'', name:'Standardpunkt', width:LOCAL_CHAT_ICON_SIZE, height:LOCAL_CHAT_ICON_SIZE, missing:false };
+}
+
+function normalizeLocalChatIcon(sourcePath) {
+  const decoded = nativeImage.createFromPath(sourcePath);
+  const sourceSize = decoded.getSize();
+  if (decoded.isEmpty() || sourceSize.width < 1 || sourceSize.height < 1) throw new Error('Das ausgewählte Icon konnte nicht gelesen werden.');
+  if (sourceSize.width > 12000 || sourceSize.height > 12000) throw new Error('Das Ausgangsbild darf höchstens 12000 × 12000 Pixel groß sein.');
+  const side = Math.min(sourceSize.width, sourceSize.height);
+  const square = decoded.crop({ x:Math.floor((sourceSize.width-side)/2), y:Math.floor((sourceSize.height-side)/2), width:side, height:side });
+  const normalized = square.resize({ width:LOCAL_CHAT_ICON_SIZE, height:LOCAL_CHAT_ICON_SIZE, quality:'best' });
+  const outputSize = normalized.getSize();
+  const bytes = normalized.toPNG();
+  if (normalized.isEmpty() || outputSize.width !== LOCAL_CHAT_ICON_SIZE || outputSize.height !== LOCAL_CHAT_ICON_SIZE || !bytes.length) throw new Error('Das Icon konnte nicht auf 128 × 128 Pixel aufbereitet werden.');
+  return { bytes, sourceWidth:sourceSize.width, sourceHeight:sourceSize.height };
+}
+
+function removeManagedImage(filePath) {
   try {
     if (isPathInside(filePath, configStore.imageDir) && fs.existsSync(filePath)) fs.unlinkSync(filePath);
   } catch {}
@@ -492,7 +535,7 @@ function registerIpc() {
     moderationHistory: chatCore.getModerationHistory(), overlay: overlayServer.getStatus(), adapters: connectorManager.statuses(), obs: obs.getStatus(),
     eventCore: eventCore.getMetrics(), ffmpeg: ffmpeg.getStatus(), database: auditStore.getStatus(), health: healthService.getStatus(),
     settings: { dirty: settingsService.isDirty(), validation: validateConfig(settingsService.getDraft()) },
-    assets: { chatBackground:chatBackgroundAsset() },
+    assets: { chatBackground:chatBackgroundAsset(), localChatIcon:localChatIconAsset() },
     secrets: { obsPassword: secretsService.has(SECRET_REFS.obs), youtubeApiKey: secretsService.has(SECRET_REFS.youtube), discordWebhook: secretsService.has(SECRET_REFS.discord), cngObsChatUrl: secretsService.has(SECRET_REFS.cng) }
   }));
 
@@ -611,10 +654,10 @@ function registerIpc() {
       applyConfig(next, { appearance:next.appearance });
       const asset = chatBackgroundAsset(next);
       send('chat-background:changed', { config:next, asset });
-      if (previousPath && previousPath !== destination) removeManagedChatBackground(previousPath);
+      if (previousPath && previousPath !== destination) removeManagedImage(previousPath);
       return { ok:true, config:next, asset, width:size.width, height:size.height };
     } catch (error) {
-      removeManagedChatBackground(destination);
+      removeManagedImage(destination);
       return { ok:false, error:error.message };
     }
   });
@@ -628,7 +671,46 @@ function registerIpc() {
       applyConfig(next, { appearance:next.appearance });
       const asset = chatBackgroundAsset(next);
       send('chat-background:changed', { config:next, asset });
-      removeManagedChatBackground(previousPath);
+      removeManagedImage(previousPath);
+      return { ok:true, config:next, asset };
+    } catch (error) { return { ok:false, error:error.message }; }
+  });
+
+  ipcMain.handle('dialog:localChatIcon', async () => {
+    const result = await dialog.showOpenDialog({ title:'Icon für Lokaler Chat / Overlay auswählen', properties:['openFile'], filters:[{ name:'Bilder', extensions:['png','jpg','jpeg','webp'] }] });
+    if (result.canceled || !result.filePaths[0]) return { ok:false, canceled:true };
+    const validation = validateLocalChatIconSource(result.filePaths[0]);
+    if (!validation.ok) return validation;
+    const destination = path.join(configStore.imageDir, `local-chat-icon-${Date.now()}-${crypto.randomUUID().slice(0,8)}.png`);
+    try {
+      const normalized = normalizeLocalChatIcon(validation.path);
+      fs.writeFileSync(destination, normalized.bytes, { flag:'wx' });
+      const cfg = currentConfig();
+      const previousPath = cfg.appearance?.chatIcons?.local?.customPath;
+      const next = configStore.merge({ appearance:{ chatIcons:{ local:{ mode:'custom', customPath:destination, customName:path.basename(validation.path).slice(0,260) } } } });
+      settingsService.discard();
+      applyConfig(next, { appearance:next.appearance });
+      const asset = localChatIconAsset(next);
+      if (asset.missing) throw new Error(asset.error || 'Das lokale Chat-Icon konnte nicht gespeichert werden.');
+      send('local-chat-icon:changed', { config:next, asset });
+      if (previousPath && previousPath !== destination) removeManagedImage(previousPath);
+      return { ok:true, config:next, asset, sourceWidth:normalized.sourceWidth, sourceHeight:normalized.sourceHeight, width:LOCAL_CHAT_ICON_SIZE, height:LOCAL_CHAT_ICON_SIZE };
+    } catch (error) {
+      removeManagedImage(destination);
+      return { ok:false, error:error.message };
+    }
+  });
+
+  ipcMain.handle('local-chat-icon:reset', () => {
+    try {
+      const cfg = currentConfig();
+      const previousPath = cfg.appearance?.chatIcons?.local?.customPath;
+      const next = configStore.merge({ appearance:{ chatIcons:{ local:{ mode:'default', customPath:'', customName:'' } } } });
+      settingsService.discard();
+      applyConfig(next, { appearance:next.appearance });
+      const asset = localChatIconAsset(next);
+      send('local-chat-icon:changed', { config:next, asset });
+      removeManagedImage(previousPath);
       return { ok:true, config:next, asset };
     } catch (error) { return { ok:false, error:error.message }; }
   });

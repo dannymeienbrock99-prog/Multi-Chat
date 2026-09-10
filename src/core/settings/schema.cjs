@@ -113,6 +113,13 @@ function validateConfig(config) {
     if (!numberIn(chatBackground.darkness, 0, .95)) errors.push(issue('appearance.chatBackground.darkness', 'Chatbild-Abdunklung muss zwischen 0 und 0.95 liegen.'));
     if (typeof chatBackground.showInMain !== 'boolean') errors.push(issue('appearance.chatBackground.showInMain', 'Die Hauptfenster-Auswahl muss wahr oder falsch sein.'));
   }
+  const localChatIcon=c.appearance?.chatIcons?.local;
+  if (!localChatIcon || typeof localChatIcon !== 'object' || Array.isArray(localChatIcon)) errors.push(issue('appearance.chatIcons.local', 'Die Einstellung für das lokale Chat-Icon fehlt.'));
+  else {
+    if (!['default','custom'].includes(String(localChatIcon.mode || ''))) errors.push(issue('appearance.chatIcons.local.mode', 'Die Quelle des lokalen Chat-Icons muss default oder custom sein.'));
+    if (localChatIcon.mode === 'custom' && (!String(localChatIcon.customPath || '').trim() || String(localChatIcon.customPath).length > 4096)) errors.push(issue('appearance.chatIcons.local.customPath', 'Für ein eigenes lokales Chat-Icon wird ein gültiger Dateipfad benötigt.'));
+    if (typeof localChatIcon.customName !== 'string' || localChatIcon.customName.length > 260) errors.push(issue('appearance.chatIcons.local.customName', 'Der Dateiname des lokalen Chat-Icons ist ungültig.'));
+  }
 
   const bc=c.autoBroadcast || {};
   if (bc.items !== undefined) {

@@ -17,12 +17,15 @@ const DEFAULT_CHAT_BACKGROUND = {
   darkness:.82,
   showInMain:false
 };
+const DEFAULT_CHAT_ICONS = {
+  local: { mode:'default', customPath:'', customName:'' }
+};
 
 const DEFAULT_CONFIG = {
   version: CURRENT_VERSION,
   schemaVersion: CURRENT_SCHEMA_VERSION,
   general: { displayName:'Crazy_Batto', language:'de', autoSave:false, startMinimized:false, startView:'start', minimizeToTray:false, updateBehavior:'manual' },
-  appearance: { uiScale:1, panelOpacity:.9, brightness:1, compact:false, programBackground:true, backgroundDarkness:.28, theme:'marble-gold', chatBackground:DEFAULT_CHAT_BACKGROUND },
+  appearance: { uiScale:1, panelOpacity:.9, brightness:1, compact:false, programBackground:true, backgroundDarkness:.28, theme:'marble-gold', chatBackground:DEFAULT_CHAT_BACKGROUND, chatIcons:DEFAULT_CHAT_ICONS },
   sync: { enabled:true, debounceMs:250, modules:{ platforms:true, commands:true, autoBroadcast:true, events:true, mediaPools:true, tts:true, cng:true, cohost:true, overlays:true, obs:true, alerts:true } },
   multiChat: { enabled:true, defaultTab:'all', showTimestamp:true, showPlatform:true, showBadges:true, autoScroll:true, maxMessages:500, fontFamily:'Segoe UI', fontSize:14 },
   moderation: {
