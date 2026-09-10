@@ -1,0 +1,162 @@
+name: Batto 2.1.3 Marmor-Gold Windows
+on:
+  push:
+    branches: [build/batto-obs-tool-2.1-core]
+    paths: [.github/workflows/release-213.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: batto-release-213-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  integrate-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    outputs:
+      commit: ${{ steps.persist.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply locally tested source patch with checksums
+        shell: bash
+        run: |
+          node - <<'JS'
+          const fs=require('node:fs'),crypto=require('node:crypto'),zlib=require('node:zlib'),cp=require('node:child_process'),path=require('node:path');
+          const expected=['b612d4655401ffec8bb3ade9cefd0117a2db1729a5e3627552d844f01c009ea5','5d75932367da6e6452937fb357e9aa9f3e8823f15d0119caf6456db98f010a52','a7ecc5d9e7dfb0a367da8f103451d3349f02d8335b39c5073a13402259c2cdd2','f75bbcc9720120ba81517aaa063526c325a9038faeeb2c02d5edd345e4965c35','b33b2025e88720519ae828734c1df40b03e645d5e0821e60c9d4420d8103c095'];
+          const sha=b=>crypto.createHash('sha256').update(b).digest('hex');
+          const parts=expected.map((hash,i)=>{const p=fs.readFileSync(`build/release213/part${String(i).padStart(2,'0')}.b64`,'utf8').trim();if(sha(p)!==hash)throw new Error(`Patch part ${i} failed integrity verification`);return p;});
+          const patch=zlib.brotliDecompressSync(Buffer.from(parts.join(''),'base64'));
+          if(sha(patch)!=='95962a8c74e7db1df1e5a0d5475d3e86c1e6c9e798bf1069990e6f2ea658e385')throw new Error('Source patch checksum mismatch');
+          const pkg=require('./package.json');
+          if(pkg.version==='2.1.2'){
+            cp.execFileSync('node',['scripts/restore-app.cjs'],{stdio:'inherit'});
+            const file=path.join(process.env.RUNNER_TEMP,'batto-213.patch');fs.writeFileSync(file,patch);
+            cp.execFileSync('git',['apply','--check',file],{stdio:'inherit'});
+            cp.execFileSync('git',['apply',file],{stdio:'inherit'});
+          }else if(pkg.version!=='2.1.3')throw new Error('Unexpected source version; refusing to overwrite newer work');
+          cp.execFileSync('node',['scripts/restore-app.cjs'],{stdio:'inherit'});
+          JS
+      - name: Install pinned dependencies
+        run: npm install --no-audit --no-fund
+      - name: Source, storage, runtime and independent broadcast tests
+        run: |
+          npm run check
+          npm run smoke
+          npm run test:storage
+          npm run test:core
+          npm run test:runtime
+          npm run test:ui
+          npm run test:broadcast
+          npm run test:release
+      - name: 500 events per second for 60 seconds
+        env:
+          STRESS_RATE: 500
+          STRESS_SECONDS: 60
+        run: npm run stress
+      - name: Quick soak regression
+        env:
+          SOAK_MINUTES: 1
+        run: npm run soak
+      - name: Persist tested direct source without merging main
+        id: persist
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add electron src scripts package.json package-lock.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'Complete 2.1.3 marble/gold UI, shared settings and broadcast runtime'
+            git push origin HEAD:build/batto-obs-tool-2.1-core
+          fi
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Batto-2.1.3-Tested-Source
+          path: |
+            electron/
+            src/
+            scripts/
+            package.json
+            package-lock.json
+            README.md
+          if-no-files-found: error
+  windows:
+    needs: integrate-and-verify
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.integrate-and-verify.outputs.commit }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Verify Windows storage, runtime and broadcasts
+        run: npm run check && npm run test:storage && npm run test:runtime && npm run test:broadcast && npm run test:release
+      - name: Build original-artwork Windows installer
+        run: npm run pack:win
+      - name: Install and exercise actual user workflows
+        shell: pwsh
+        env:
+          BATTO_QA_DIR: ${{ runner.temp }}/batto-213-qa
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Get-Item 'dist\Batto-OBS-Tool-2.1-Setup-2.1.3.exe'
+          $installDir = Join-Path $env:RUNNER_TEMP 'Batto213Installed'
+          $setup = Start-Process -FilePath $installer.FullName -ArgumentList @('/S', "/D=$installDir") -PassThru
+          if (-not $setup.WaitForExit(120000)) { Stop-Process -Id $setup.Id -Force; throw 'Installer timed out' }
+          if ($setup.ExitCode -ne 0) { throw "Installer failed: $($setup.ExitCode)" }
+          $exe = Join-Path $installDir 'Batto OBS Tool 2.1.exe'
+          if (-not (Test-Path $exe)) { throw 'Installed program missing' }
+          $process = Start-Process -FilePath $exe -ArgumentList '--batto-qa' -PassThru
+          if (-not $process.WaitForExit(150000)) { Stop-Process -Id $process.Id -Force; throw 'Installed UI test timed out' }
+          $report = Join-Path $env:BATTO_QA_DIR 'result.json'
+          if (-not (Test-Path $report)) { throw "No installed UI report; exit $($process.ExitCode)" }
+          $result = Get-Content $report -Raw | ConvertFrom-Json
+          $result | ConvertTo-Json -Depth 8
+          if (-not $result.ok -or $process.ExitCode -ne 0) { throw "Installed UI test failed: $($result.error)" }
+          $resume = Start-Process -FilePath $exe -ArgumentList '--batto-qa-resume' -PassThru
+          if (-not $resume.WaitForExit(60000)) { Stop-Process -Id $resume.Id -Force; throw 'Restart test timed out' }
+          $report2 = Join-Path $env:BATTO_QA_DIR 'resume-result.json'
+          if (-not (Test-Path $report2)) { throw 'Restart report missing' }
+          $result2 = Get-Content $report2 -Raw | ConvertFrom-Json
+          $result2 | ConvertTo-Json -Depth 8
+          if (-not $result2.ok -or $resume.ExitCode -ne 0) { throw "Restart test failed: $($result2.error)" }
+      - name: Upload actual-window screenshots and QA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Batto-2.1.3-Installed-QA
+          path: |
+            ${{ runner.temp }}/batto-213-qa/*.json
+            ${{ runner.temp }}/batto-213-qa/*.png
+          if-no-files-found: warn
+      - name: Package verified Windows delivery
+        shell: pwsh
+        env:
+          SOURCE_COMMIT: ${{ needs.integrate-and-verify.outputs.commit }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Copy-Item 'dist\Batto-OBS-Tool-2.1-Setup-2.1.3.exe' 'dist\Crazy_Batto-MarmorGold-2.1.3-Setup.exe'
+          Compress-Archive -Path 'dist\Crazy_Batto-MarmorGold-2.1.3-Setup.exe' -DestinationPath 'dist\Crazy_Batto-MarmorGold-2.1.3-Windows.zip' -Force
+          $hash = (Get-FileHash 'dist\Crazy_Batto-MarmorGold-2.1.3-Setup.exe' -Algorithm SHA256).Hash.ToLower()
+          "$hash  Crazy_Batto-MarmorGold-2.1.3-Setup.exe" | Set-Content 'dist\SHA256SUMS.txt' -Encoding ascii
+          @{version='2.1.3'; sourceCommit=$env:SOURCE_COMMIT; runId=$env:GITHUB_RUN_ID; sha256=$hash; installedApplicationTests=$true; independentRestartTest=$true; livePlatformAcceptance=$false; realObsAcceptance=$false; fourHourSoak=$false} | ConvertTo-Json | Set-Content 'dist\delivery-manifest.json' -Encoding utf8
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Crazy_Batto-MarmorGold-2.1.3-Windows-Verified
+          path: |
+            dist/Crazy_Batto-MarmorGold-2.1.3-Setup.exe
+            dist/Crazy_Batto-MarmorGold-2.1.3-Windows.zip
+            dist/SHA256SUMS.txt
+            dist/delivery-manifest.json
+          if-no-files-found: error
