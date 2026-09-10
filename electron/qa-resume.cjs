@@ -25,6 +25,8 @@ app.whenReady().then(async()=>{
     assert.equal(state.config.autoBroadcast.items[0].name,expected.broadcastName);
     assert.equal(state.config.tts.volume,expected.volume);
     assert.equal(state.config.platforms.tikfinity.webWidgets.some(widget=>widget.url===expected.tikfinityChatUrl),true);
+    const resumedChatFrame=await win.webContents.executeJavaScript(`(()=>{S.chatTab='tiktok';setView('dashboard');renderChat();const frame=document.querySelector('#tikfinityChatFrame');return frame?{src:frame.src,visible:frame.getBoundingClientRect().height>100}:null})()`);
+    assert.deepEqual(resumedChatFrame,{src:expected.tikfinityChatUrl,visible:true});
     assert.equal(state.config.appearance.chatBackground.mode,'custom');
     assert.equal(state.config.appearance.chatBackground.customName,expected.chatBackgroundName);
     assert.equal(state.config.appearance.chatBackground.customPath,expected.chatBackgroundPath);

@@ -105,9 +105,9 @@ jobs:
           name: Batto-Windows-QA-Evidence
           path: |
             ${{ runner.temp }}/batto-qa-report/result.json
-            ${{ runner.temp }}/batto-qa-report/dashboard.png
+            ${{ runner.temp }}/batto-qa-report/*.png
             ${{ runner.temp }}/batto-packaged-qa/result.json
-            ${{ runner.temp }}/batto-packaged-qa/dashboard.png
+            ${{ runner.temp }}/batto-packaged-qa/*.png
           if-no-files-found: warn
       - name: Upload verified Windows installer
         uses: actions/upload-artifact@v4
