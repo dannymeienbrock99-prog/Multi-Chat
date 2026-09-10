@@ -1,7 +1,7 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 const root=path.resolve(__dirname,'..');
-require('./tikfinity-214.cjs').apply(root);
+require('./tikfinity-214-win.cjs').apply(root);
 for(const item of require('../src/assets/artwork-manifest.json')){
  const file=path.join(root,'src/assets/source',item.file);
  const actual=crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
