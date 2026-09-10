@@ -1,0 +1,311 @@
+name: Marmor Gold 2.1.2 Verified Delivery
+
+on:
+  push:
+    branches: [build/batto-obs-tool-2.1-core]
+    paths: [.github/workflows/marmor-gold-212-verified.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: marmor-gold-212-verified-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    outputs:
+      commit: ${{ steps.persist.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Restore the already prepared runtime fixes with Git object verification
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const crypto = require('crypto');
+            const expected = [
+              ['127cb52d5147aaf649ccc28ac80b24136020afd6', 'scripts/wire-gold.cjs', 'GOLD_BROADCAST_RUNTIME'],
+              ['b2e903472c6cd71ed8030f73174e7eaaeb028f68', 'src/renderer/branding-ui.js', 'BattoBroadcast'],
+              ['f9d63a8e119f9087e485106d2edaf835fdc32903', 'scripts/prepare-icons.cjs', 'installer-sidebar']
+            ];
+            for (const [sha, target, marker] of expected) {
+              const {data} = await github.rest.git.getBlob({...context.repo, file_sha:sha});
+              if (data.encoding !== 'base64') throw new Error('Unexpected blob encoding');
+              const bytes = Buffer.from(data.content.replace(/\s/g,''),'base64');
+              const actual = crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex');
+              if (actual !== sha || !bytes.toString('utf8').includes(marker)) throw new Error(`Prepared source does not match its intended role: ${target}`);
+              if (target !== 'scripts/prepare-icons.cjs' && fs.existsSync(target) && !fs.readFileSync(target).equals(bytes)) throw new Error(`Newer work requires reconciliation: ${target}`);
+              fs.mkdirSync(path.dirname(target),{recursive:true});
+              fs.writeFileSync(target,bytes);
+            }
+            const packageFile = 'package.json';
+            const pkg = JSON.parse(fs.readFileSync(packageFile,'utf8'));
+            if (!['2.1.1','2.1.2'].includes(pkg.version)) throw new Error('Newer application version found; refusing to downgrade');
+            pkg.version = '2.1.2';
+            pkg.scripts['pack:win'] = 'electron-builder --win nsis --publish never';
+            pkg.scripts['test:broadcast'] = 'node scripts/broadcast-regression.cjs';
+            pkg.build.nsis.installerSidebar = 'src/assets/installer-sidebar.bmp';
+            pkg.build.nsis.uninstallerSidebar = 'src/assets/installer-sidebar.bmp';
+            pkg.build.nsis.runAfterFinish = false;
+            fs.writeFileSync(packageFile,JSON.stringify(pkg,null,2)+'\n');
+            const restoreFile = 'scripts/restore-app.cjs';
+            let restore = fs.readFileSync(restoreFile,'utf8');
+            if (!restore.includes("require('./wire-gold.cjs')")) {
+              restore += "\n// Keep the completed runtime wiring after restoration of legacy renderer parts.\nrequire('./wire-gold.cjs').wire(require('node:path').resolve(__dirname, '..'));\n";
+              fs.writeFileSync(restoreFile,restore);
+            }
+      - name: Add real installed-window interaction and persistence regression
+        shell: bash
+        run: |
+          cat > scripts/gold-visual-test.cjs <<'JS'
+          'use strict';
+          const { _electron: electron } = require('playwright');
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const assert = require('node:assert/strict');
+          (async () => {
+            const out = process.env.BATTO_QA_DIR;
+            const executablePath = process.env.BATTO_INSTALLED_EXE;
+            if (!out || !executablePath) throw new Error('Installed application and QA directory are required.');
+            fs.mkdirSync(out,{recursive:true});
+            const checks = [], errors = [];
+            const profile = path.join(process.env.RUNNER_TEMP,'batto-gold-visual-profile');
+            fs.mkdirSync(profile,{recursive:true});
+            let app, page;
+            const launch = async () => {
+              app = await electron.launch({executablePath,env:{...process.env,APPDATA:profile},timeout:90000});
+              page = await app.firstWindow({timeout:90000});
+              page.on('pageerror',err=>errors.push(err.message));
+              await page.waitForFunction(()=>window.__battoGoldReady && typeof S!=='undefined' && S.config,null,{timeout:60000});
+            };
+            const imageCheck = async (p) => {
+              await p.waitForFunction(()=>Array.from(document.querySelectorAll('img')).filter(i=>i.getClientRects().length).every(i=>i.complete && i.naturalWidth>0),null,{timeout:30000});
+            };
+            const items = async () => page.evaluate(()=>S.config.autoBroadcast.items);
+            const navigate = async (view) => {
+              await page.locator(`#mainNav [data-view="${view}"]`).click();
+              await page.locator(`[data-view-panel="${view}"]`).waitFor({state:'visible'});
+              await imageCheck(page);
+              await page.screenshot({path:path.join(out,view+'.png'),fullPage:false});
+            };
+            try {
+              await launch();
+              const nav = await page.locator('#mainNav [data-view]').evaluateAll(nodes=>nodes.map(n=>n.dataset.view));
+              assert.equal(nav[0],'start'); assert.equal(nav[1],'dashboard');
+              checks.push('Start button precedes Multi-Chat; existing navigation order is retained.');
+              for (const view of ['start','dashboard','broadcast','settings']) {
+                await navigate(view);
+                assert((await page.locator('body').innerText()).trim().length>100);
+                checks.push(view+': actual installed window rendered with decoded visible images.');
+              }
+              const family = page.locator('#familyLogos');
+              await family.waitFor({state:'visible'});
+              await family.scrollIntoViewIfNeeded();
+              await imageCheck(page);
+              assert.equal(await family.locator('img').count(),2);
+              await family.screenshot({path:path.join(out,'settings-logos.png')});
+              checks.push('Sarah and Michelle original logos are present in Settings.');
+              await navigate('broadcast');
+              const create = async (name,text) => {
+                await page.locator('#bcNew').click();
+                await page.locator('#bcName').fill(name);
+                await page.locator('[data-bc-message="0"]').fill(text);
+                await page.locator('[data-bc-target="cng"]').uncheck();
+                await page.locator('[data-bc-target="local"]').check();
+                await page.locator('#bcEnabled').check();
+                await page.locator('#bcDelay').fill('0');
+                await page.locator('#bcSave').click();
+                await page.waitForFunction(name=>S.config.autoBroadcast.items.some(i=>i.name===name),name);
+              };
+              await create('QA Stream-Hinweis','QA Automatik eins');
+              await create('QA Community-Regeln','QA Automatik zwei');
+              assert.equal((await items()).length,2);
+              await page.locator('[data-bc-message="0"]').fill('QA Automatik zwei aktualisiert');
+              await page.locator('#bcSave').click();
+              await page.waitForFunction(()=>S.config.autoBroadcast.items.some(i=>i.messages.includes('QA Automatik zwei aktualisiert')));
+              checks.push('Two independent broadcasts created and edited through real visible controls.');
+              await page.locator('#bcGlobalGap').fill('0');
+              await page.locator('#bcPlatformGap').fill('0');
+              await page.locator('#bcMaster').check();
+              await page.locator('#bcMasterSave').click();
+              await page.waitForFunction(()=>JSON.stringify(S.messages).includes('QA Automatik eins') && JSON.stringify(S.messages).includes('QA Automatik zwei aktualisiert'),null,{timeout:15000});
+              checks.push('The Electron Main scheduler emitted both configured local broadcasts.');
+              await page.locator('#bcDuplicate').click();
+              await page.waitForFunction(()=>S.config.autoBroadcast.items.length===3);
+              const duplicate = (await items()).find(i=>i.name.endsWith('(Kopie)'));
+              assert(duplicate && duplicate.enabled===false);
+              await page.locator('#bcDelete').click();
+              await page.locator('dialog button[value="yes"]').click();
+              await page.waitForFunction(()=>S.config.autoBroadcast.items.length===2);
+              const schedule = await page.evaluate(()=>window.batto.broadcastStatus());
+              assert(!schedule.items.some(i=>i.id===duplicate.id));
+              checks.push('Duplicate is paused; deletion removes the record and its active schedule.');
+              await page.locator('#bcMaster').uncheck();
+              await page.locator('#bcMasterSave').click();
+              await page.waitForFunction(()=>S.config.autoBroadcast.enabled===false);
+              await page.screenshot({path:path.join(out,'broadcast-configured.png'),fullPage:false});
+              await page.evaluate(()=>window.batto.saveConfig({tts:{volume:0.37}}));
+              await page.evaluate(()=>window.batto.detachChat());
+              const deadline=Date.now()+15000;
+              while(app.windows().length<2 && Date.now()<deadline) await page.waitForTimeout(100);
+              const detached=app.windows().find(w=>w!==page);
+              assert(detached,'Detached chat window did not open.');
+              detached.on('pageerror',err=>errors.push(err.message));
+              await detached.waitForFunction(()=>window.__battoGoldReady,null,{timeout:30000});
+              await imageCheck(detached);
+              const background=await detached.locator('.chat-card').evaluate(el=>getComputedStyle(el).backgroundImage);
+              assert(background.includes('rose.jpg'),'Rose artwork missing from detached chat.');
+              await detached.screenshot({path:path.join(out,'detached.png'),fullPage:false});
+              await page.evaluate(()=>window.batto.saveConfig({tts:{volume:0.41}}));
+              await detached.waitForFunction(()=>S.config.tts.volume===0.41);
+              checks.push('Detached rose-artwork chat opens; settings synchronize across both real windows.');
+              assert.deepEqual(errors,[],'Renderer runtime errors were detected.');
+              await app.close(); app=null;
+              await launch();
+              const saved=await page.evaluate(()=>({items:S.config.autoBroadcast.items,enabled:S.config.autoBroadcast.enabled,volume:S.config.tts.volume}));
+              assert.equal(saved.items.length,2);assert.equal(saved.enabled,false);assert.equal(saved.volume,0.41);
+              assert(saved.items.some(i=>i.messages.includes('QA Automatik zwei aktualisiert')));
+              checks.push('Broadcast records, edited messages, pause and TTS volume survive a full application restart.');
+              fs.writeFileSync(path.join(out,'rendered-checks.json'),JSON.stringify({ok:true,version:'2.1.2',checks,errors,scope:'Isolated Windows profile; local synthetic chat only. No live platform-account or physical OBS acceptance.'},null,2));
+            } catch (error) {
+              try {if(page)await page.screenshot({path:path.join(out,'failure.png'),fullPage:false});}catch{}
+              fs.writeFileSync(path.join(out,'rendered-checks.json'),JSON.stringify({ok:false,checks,errors,error:error.stack},null,2));
+              throw error;
+            } finally {if(app)await app.close();}
+          })().catch(error=>{console.error(error);process.exit(1);});
+          JS
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Syntax, storage, runtime and broadcast regression
+        run: |
+          npm run check
+          npm run smoke
+          npm run test:storage
+          npm run test:core
+          npm run test:runtime
+          npm run test:ui
+          npm run test:broadcast
+      - name: 500 events per second regression
+        env:
+          STRESS_SECONDS: 60
+          STRESS_RATE: 500
+        run: npm run stress
+      - name: One-minute soak regression
+        env:
+          SOAK_MINUTES: 1
+        run: node scripts/soak.cjs
+      - name: Commit tested source wiring without changing main
+        id: persist
+        shell: bash
+        run: |
+          git add electron src scripts package.json
+          if ! git diff --cached --quiet; then
+            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Finish 2.1.2 marble/gold runtime wiring and independent broadcast persistence'
+            git push origin HEAD:build/batto-obs-tool-2.1-core
+          fi
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  windows-delivery:
+    needs: prepare-and-test
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-and-test.outputs.commit }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Windows regressions
+        run: npm run check && npm run smoke && npm run test:storage && npm run test:core && npm run test:runtime && npm run test:ui && npm run test:broadcast
+      - name: Build 2.1.2 installer without automatic publication
+        run: npm run pack:win
+      - name: Install and test the packaged application
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Get-Item 'dist\Batto-OBS-Tool-2.1-Setup-2.1.2.exe'
+          $installDir = Join-Path $env:RUNNER_TEMP 'batto-gold-installed'
+          $setup = Start-Process -FilePath $installer.FullName -ArgumentList @('/S', "/D=$installDir") -PassThru -Wait
+          if ($setup.ExitCode -ne 0) { throw "Installer failed: $($setup.ExitCode)" }
+          $package = Get-Content package.json -Raw | ConvertFrom-Json
+          $exe = Join-Path $installDir ($package.build.productName + '.exe')
+          if (-not (Test-Path $exe)) { throw 'Installed executable is missing' }
+          $env:BATTO_QA_DIR = Join-Path $env:RUNNER_TEMP 'batto-gold-qa'
+          $process = Start-Process -FilePath $exe -ArgumentList '--batto-qa' -PassThru
+          if (-not $process.WaitForExit(90000)) { Stop-Process -Id $process.Id -Force; throw 'Installed application acceptance timed out' }
+          $report = Join-Path $env:BATTO_QA_DIR 'result.json'
+          if (-not (Test-Path $report)) { throw 'Application produced no acceptance report' }
+          $result = Get-Content $report -Raw | ConvertFrom-Json
+          if (-not $result.ok -or $process.ExitCode -ne 0) { throw "Application acceptance failed: $($result.error)" }
+          "BATTO_INSTALLED_EXE=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "BATTO_QA_DIR=$env:BATTO_QA_DIR" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Install test-only Electron driver
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: npm install --no-save --package-lock=false playwright --no-audit --no-fund
+      - name: Verify Start, broadcasts, family logos, detached chat and restart persistence
+        run: node scripts/gold-visual-test.cjs
+      - name: Upload real-window evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Batto-MarmorGold-2.1.2-Windows-QA
+          path: |
+            ${{ runner.temp }}/batto-gold-qa/*.json
+            ${{ runner.temp }}/batto-gold-qa/*.png
+            src/assets/installer-sidebar.png
+            src/assets/build-artwork-report.json
+          if-no-files-found: warn
+      - name: Package verified Windows delivery
+        shell: pwsh
+        env:
+          DELIVERY_COMMIT: ${{ needs.prepare-and-test.outputs.commit }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Copy-Item 'dist\Batto-OBS-Tool-2.1-Setup-2.1.2.exe' 'dist\Batto-MarmorGold-2.1.2-Setup.exe'
+          Compress-Archive -Path 'dist\Batto-MarmorGold-2.1.2-Setup.exe' -DestinationPath 'dist\Batto-MarmorGold-2.1.2-Windows.zip' -Force
+          $hash = (Get-FileHash 'dist\Batto-MarmorGold-2.1.2-Setup.exe' -Algorithm SHA256).Hash.ToLower()
+          "$hash  Batto-MarmorGold-2.1.2-Setup.exe" | Set-Content 'dist\SHA256SUMS-2.1.2.txt' -Encoding ascii
+          Copy-Item "$env:BATTO_QA_DIR\rendered-checks.json" 'dist\Batto-MarmorGold-2.1.2-Tests.json'
+          $manifest = @{ version='2.1.2'; commit=$env:DELIVERY_COMMIT; run=$env:GITHUB_RUN_ID; sha256=$hash; installer='Batto-MarmorGold-2.1.2-Setup.exe'; installedApplicationTests=$true; liveAccountsTested=$false; fourHourSoakTested=$false }
+          $manifest | ConvertTo-Json | Set-Content 'dist\Batto-MarmorGold-2.1.2-Manifest.json' -Encoding utf8
+      - name: Upload verified Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Batto-MarmorGold-2.1.2-Verified
+          path: |
+            dist/Batto-MarmorGold-2.1.2-Setup.exe
+            dist/Batto-MarmorGold-2.1.2-Windows.zip
+            dist/SHA256SUMS-2.1.2.txt
+            dist/Batto-MarmorGold-2.1.2-Tests.json
+            dist/Batto-MarmorGold-2.1.2-Manifest.json
+          if-no-files-found: error
+      - name: Publish tested development installer without merging main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DELIVERY_COMMIT: ${{ needs.prepare-and-test.outputs.commit }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = 'marmor-gold-v2.1.2-verified'
+          gh release view $tag --json tagName 2>$null
+          if ($LASTEXITCODE -eq 0) { throw 'A release with this tag already exists; no file will be overwritten.' }
+          gh release create $tag 'dist/Batto-MarmorGold-2.1.2-Setup.exe' 'dist/Batto-MarmorGold-2.1.2-Windows.zip' 'dist/SHA256SUMS-2.1.2.txt' 'dist/Batto-MarmorGold-2.1.2-Tests.json' 'dist/Batto-MarmorGold-2.1.2-Manifest.json' --target $env:DELIVERY_COMMIT --prerelease --title 'Batto OBS Tool 2.1.2 - Marmor/Gold' --notes 'Original Start artwork, rose installer and detached chat artwork, Sarah and Michelle logos in Settings, dark marble/gold theme and independent editable/deletable broadcasts. Windows installation, real rendered controls, local automatic broadcasts, deletion, settings synchronization and restart persistence verified in an isolated profile. Live platform accounts, physical OBS and the full four-hour soak are not certified. Main remains unchanged.'
+          if ($LASTEXITCODE -ne 0) { throw 'Release upload failed.' }
