@@ -6,6 +6,8 @@ const app = fs.readFileSync(path.join(root,'src','renderer','app.js'),'utf8');
 const html = fs.readFileSync(path.join(root,'src','renderer','index.html'),'utf8');
 const css = fs.readFileSync(path.join(root,'src','renderer','styles.css'),'utf8');
 const v21 = fs.readFileSync(path.join(root,'src','renderer','v21-ui.js'),'utf8');
+const main = fs.readFileSync(path.join(root,'electron','main21.cjs'),'utf8');
+const preload = fs.readFileSync(path.join(root,'electron','preload.cjs'),'utf8');
 
 const checks = [
   ['Media-Pools konfigurierbar', /renderPoolsModule|mediaPools/],
@@ -30,8 +32,11 @@ const checks = [
   ['Sarah-Luna Info', /Sarah Luna/],
   ['2.1 Diagnose UI', /Diagnose 2\.1|diagnosticsModule/],
   ['Programmhintergrund', /program-background\.jpg|--program-background/]
+  ,['Chatfenster-Bild-Upload', /stChatImageUpload|Eigenes Bild hochladen/]
+  ,['Chatbild dauerhaft gespeichert', /dialog:chatBackground|chat-background:reset/]
+  ,['Chatbild Vorschau und Anpassung', /chatBackgroundPreview|stChatImageFit|stChatImageDarkness/]
 ];
-const combined = `${app}\n${html}\n${css}\n${v21}`;
+const combined = `${app}\n${html}\n${css}\n${v21}\n${main}\n${preload}`;
 const failed = checks.filter(([,regex]) => !regex.test(combined)).map(([name]) => name);
 if (failed.length) {
   console.error('UI-Vertrag nicht erfüllt:');

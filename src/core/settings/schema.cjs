@@ -101,6 +101,18 @@ function validateConfig(config) {
   if (!integerIn(c.backup?.keep ?? 5, 1, 100)) errors.push(issue('backup.keep', 'Backup-Anzahl muss zwischen 1 und 100 liegen.'));
   if (!numberIn(c.appearance?.uiScale ?? 1, .5, 2)) errors.push(issue('appearance.uiScale', 'UI-Skalierung muss zwischen 0.5 und 2 liegen.'));
   if (!numberIn(c.appearance?.backgroundDarkness ?? .28, 0, .9)) errors.push(issue('appearance.backgroundDarkness', 'Hintergrund-Abdunklung muss zwischen 0 und 0.9 liegen.'));
+  const chatBackground=c.appearance?.chatBackground;
+  if (!chatBackground || typeof chatBackground !== 'object' || Array.isArray(chatBackground)) errors.push(issue('appearance.chatBackground', 'Chatfenster-Bild-Einstellungen fehlen.'));
+  else {
+    if (typeof chatBackground.enabled !== 'boolean') errors.push(issue('appearance.chatBackground.enabled', 'Chatfenster-Bild muss aktiviert oder deaktiviert sein.'));
+    if (!['preset','custom'].includes(String(chatBackground.mode || ''))) errors.push(issue('appearance.chatBackground.mode', 'Chatfenster-Bildquelle muss preset oder custom sein.'));
+    if (chatBackground.mode === 'custom' && (!String(chatBackground.customPath || '').trim() || String(chatBackground.customPath).length > 4096)) errors.push(issue('appearance.chatBackground.customPath', 'Für ein eigenes Chatbild wird ein gültiger Dateipfad benötigt.'));
+    if (typeof chatBackground.customName !== 'string' || chatBackground.customName.length > 260) errors.push(issue('appearance.chatBackground.customName', 'Der Chatbild-Dateiname ist ungültig.'));
+    if (!['contain','cover'].includes(String(chatBackground.fit || ''))) errors.push(issue('appearance.chatBackground.fit', 'Bildanpassung muss contain oder cover sein.'));
+    if (!['center','left center','right center'].includes(String(chatBackground.position || ''))) errors.push(issue('appearance.chatBackground.position', 'Die Chatbild-Position ist ungültig.'));
+    if (!numberIn(chatBackground.darkness, 0, .95)) errors.push(issue('appearance.chatBackground.darkness', 'Chatbild-Abdunklung muss zwischen 0 und 0.95 liegen.'));
+    if (typeof chatBackground.showInMain !== 'boolean') errors.push(issue('appearance.chatBackground.showInMain', 'Die Hauptfenster-Auswahl muss wahr oder falsch sein.'));
+  }
 
   const bc=c.autoBroadcast || {};
   if (bc.items !== undefined) {

@@ -23,7 +23,8 @@ const S = {
   poolEdit: null,
   ttsVoices: [],
   audioOutputs: [],
-  tikfinityWidgetEdit: null
+  tikfinityWidgetEdit: null,
+  assets: {}
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -115,12 +116,37 @@ async function loadProgramBackground() {
     document.documentElement.style.setProperty('--program-background', "url('../assets/marble.jpg')");
   }
 
+function chatBackgroundConfig() {
+  return {
+    enabled:true, mode:'preset', customPath:'', customName:'', fit:'contain', position:'center', darkness:.82, showInMain:false,
+    ...(S.config?.appearance?.chatBackground || {})
+  };
+}
+
+function cssImageUrl(value) {
+  return `url(${JSON.stringify(String(value || '../assets/source/crazy-batto-chat-default.jpg'))})`;
+}
+
+function applyChatBackground() {
+  const chatBackground = chatBackgroundConfig();
+  const asset = S.assets?.chatBackground || { url:'../assets/source/crazy-batto-chat-default.jpg', mode:'preset' };
+  const darkness = Math.max(0, Math.min(.95, Number(chatBackground.darkness ?? .82)));
+  const lighter = Math.max(0, darkness - .18);
+  const root = document.documentElement;
+  root.style.setProperty('--chat-background-image', cssImageUrl(asset.url));
+  root.style.setProperty('--chat-background-overlay', `linear-gradient(90deg,rgba(5,5,6,${darkness}),rgba(5,5,6,${lighter}))`);
+  root.style.setProperty('--chat-background-fit', chatBackground.fit === 'cover' ? 'cover' : 'contain');
+  root.style.setProperty('--chat-background-position', ['left center','right center'].includes(chatBackground.position) ? chatBackground.position : 'center');
+  document.body.classList.toggle('chat-background-active', chatBackground.enabled !== false && (detached || chatBackground.showInMain === true));
+}
+
 function applyAppearance() {
   const appearance = S.config?.appearance || {};
   document.documentElement.style.fontSize = `${Math.round(16 * Number(appearance.uiScale || 1))}px`;
   document.documentElement.style.setProperty('--background-darkness', String(Math.max(0, Math.min(.8, Number(appearance.backgroundDarkness ?? .28)))));
   const bg = $('.bg-watermark');
   if (bg) bg.style.display = appearance.programBackground === false ? 'none' : 'block';
+  applyChatBackground();
 }
 
 async function saveAndSync(patch, message = '') {
@@ -722,7 +748,43 @@ function renderSettingsModule() {
   const a = S.config.appearance;
   const sync = S.config.sync || { modules: {} };
   const modules = ['platforms', 'commands', 'autoBroadcast', 'events', 'mediaPools', 'tts', 'cng', 'cohost', 'overlays'];
-  $('#settingsModule').innerHTML = section('Allgemein', `<div class="form-grid"><div><label>Anzeigename</label><input id="stName" value="${esc(g.displayName)}"></div><div><label>UI-Skalierung</label><input id="stScale" type="number" min="0.8" max="1.4" step="0.05" value="${a.uiScale || 1}"></div></div><label class="check"><input id="stBackground" type="checkbox" ${a.programBackground === false ? '' : 'checked'}> Programm-Hintergrund verwenden</label><div><label>Hintergrund-Abdunklung</label><div class="range-row"><input id="stDarkness" type="range" min="0" max="70" value="${Math.round(Number(a.backgroundDarkness ?? .28) * 100)}"><span id="stDarknessLabel">${Math.round(Number(a.backgroundDarkness ?? .28) * 100)}%</span></div></div>`) + section('Overlay / HTTP', `<div class="form-grid three"><div><label>Host</label><input id="stHost" value="${esc(h.host)}"></div><div><label>Port</label><input id="stPort" type="number" value="${h.port}"></div><div><label>Heartbeat Sekunden</label><input id="stHeartbeat" type="number" value="${h.heartbeatSeconds || 15}"></div></div><label class="check"><input id="stHttp" type="checkbox" ${h.enabled ? 'checked' : ''}> Overlay-Webserver aktiv</label>`) + section('Automatische Synchronisation / Zusatz-Einstellungen', `<label class="check"><input id="stSync" type="checkbox" ${sync.enabled !== false ? 'checked' : ''}> Änderungen sofort an laufende Module synchronisieren</label><div class="media-picker">${modules.map((module) => `<label class="media-check"><input type="checkbox" data-sync-module="${module}" ${sync.modules?.[module] === false ? '' : 'checked'}> ${esc(module)}</label>`).join('')}</div><p>Bei aktivierter Synchronisation werden gespeicherte Änderungen sofort in Dashboard, Overlays, Bridges, TTS, Commands, Events, Medien-Pools und Auto-Broadcast übernommen.</p>`) + section('Info', `<div class="info-card"><strong>Sarah Luna</strong><p>Ich danke Dir Für alles Sarah Luna Ich hab Dich Lieb Dein Bruder Crazy_Batto</p></div>`) + `<div class="toolbar"><button class="primary" id="stSave">Alles speichern & synchronisieren</button><button id="stOpen">Chat-Overlay öffnen</button></div>`;
+  const chatBackground = chatBackgroundConfig();
+  const chatAsset = S.assets?.chatBackground || {};
+  const chatImageName = chatBackground.mode === 'custom' ? (chatBackground.customName || 'Eigenes Bild') : 'Crazy_Batto Social-Media-Motiv';
+  const chatImageStatus = chatAsset.missing ? 'Eigene Datei fehlt – das Crazy_Batto-Motiv wird ersatzweise angezeigt.' : chatBackground.mode === 'custom' ? 'Eigenes Bild gespeichert' : 'Mitgeliefertes Motiv aus deinem Social-Media-Set';
+  $('#settingsModule').innerHTML = section('Allgemein', `<div class="form-grid"><div><label>Anzeigename</label><input id="stName" value="${esc(g.displayName)}"></div><div><label>UI-Skalierung</label><input id="stScale" type="number" min="0.8" max="1.4" step="0.05" value="${a.uiScale || 1}"></div></div><label class="check"><input id="stBackground" type="checkbox" ${a.programBackground === false ? '' : 'checked'}> Programm-Hintergrund verwenden</label><div><label>Hintergrund-Abdunklung</label><div class="range-row"><input id="stDarkness" type="range" min="0" max="70" value="${Math.round(Number(a.backgroundDarkness ?? .28) * 100)}"><span id="stDarknessLabel">${Math.round(Number(a.backgroundDarkness ?? .28) * 100)}%</span></div></div>`) + section('Chatfenster-Bild', `<div class="chat-background-settings" id="chatBackgroundSettings"><div class="chat-background-preview" id="chatBackgroundPreview" role="img" aria-label="Vorschau des Chatfenster-Bildes"><span>Vorschau</span></div><div><strong id="chatBackgroundName">${esc(chatImageName)}</strong><p id="chatBackgroundStatus">${esc(chatImageStatus)}</p><div class="toolbar"><button class="primary" id="stChatImageUpload">Eigenes Bild hochladen</button><button id="stChatImagePreset" ${chatBackground.mode === 'preset' ? 'disabled' : ''}>Crazy_Batto-Motiv verwenden</button></div><div class="form-grid three"><label class="check"><input id="stChatImageEnabled" type="checkbox" ${chatBackground.enabled === false ? '' : 'checked'}> Bild im Chatfenster anzeigen</label><label class="check"><input id="stChatImageMain" type="checkbox" ${chatBackground.showInMain ? 'checked' : ''}> Auch im Hauptfenster</label><label>Bildanpassung<select id="stChatImageFit"><option value="contain">Ganz anzeigen</option><option value="cover">Fenster ausfüllen</option></select></label><label>Position<select id="stChatImagePosition"><option value="center">Mitte</option><option value="left center">Links</option><option value="right center">Rechts</option></select></label></div><label>Abdunklung für lesbaren Chat <span id="stChatImageDarknessLabel">${Math.round(Number(chatBackground.darkness ?? .82) * 100)}%</span></label><div class="range-row"><input id="stChatImageDarkness" type="range" min="0" max="95" value="${Math.round(Number(chatBackground.darkness ?? .82) * 100)}"><span></span></div><div class="toolbar"><button class="primary" id="stChatImageSave">Chatbild-Einstellungen speichern</button></div><p class="composer-hint">PNG, JPG/JPEG oder WebP bis 20 MB. Das ausgewählte Bild wird sicher in die App kopiert und bleibt nach einem Neustart erhalten.</p></div></div>`) + section('Overlay / HTTP', `<div class="form-grid three"><div><label>Host</label><input id="stHost" value="${esc(h.host)}"></div><div><label>Port</label><input id="stPort" type="number" value="${h.port}"></div><div><label>Heartbeat Sekunden</label><input id="stHeartbeat" type="number" value="${h.heartbeatSeconds || 15}"></div></div><label class="check"><input id="stHttp" type="checkbox" ${h.enabled ? 'checked' : ''}> Overlay-Webserver aktiv</label>`) + section('Automatische Synchronisation / Zusatz-Einstellungen', `<label class="check"><input id="stSync" type="checkbox" ${sync.enabled !== false ? 'checked' : ''}> Änderungen sofort an laufende Module synchronisieren</label><div class="media-picker">${modules.map((module) => `<label class="media-check"><input type="checkbox" data-sync-module="${module}" ${sync.modules?.[module] === false ? '' : 'checked'}> ${esc(module)}</label>`).join('')}</div><p>Bei aktivierter Synchronisation werden gespeicherte Änderungen sofort in Dashboard, Overlays, Bridges, TTS, Commands, Events, Medien-Pools und Auto-Broadcast übernommen.</p>`) + section('Info', `<div class="info-card"><strong>Sarah Luna</strong><p>Ich danke Dir Für alles Sarah Luna Ich hab Dich Lieb Dein Bruder Crazy_Batto</p></div>`) + `<div class="toolbar"><button class="primary" id="stSave">Alles speichern & synchronisieren</button><button id="stOpen">Chat-Overlay öffnen</button></div>`;
+  $('#stChatImageFit').value = chatBackground.fit || 'contain';
+  $('#stChatImagePosition').value = chatBackground.position || 'center';
+  const updateChatPreview = () => {
+    const darkness = Number($('#stChatImageDarkness').value) / 100;
+    const lighter = Math.max(0, darkness - .18);
+    const preview = $('#chatBackgroundPreview');
+    preview.style.backgroundImage = `linear-gradient(90deg,rgba(5,5,6,${darkness}),rgba(5,5,6,${lighter})),${cssImageUrl(chatAsset.url)}`;
+    preview.style.backgroundSize = `auto, ${$('#stChatImageFit').value}`;
+    preview.style.backgroundPosition = `center, ${$('#stChatImagePosition').value}`;
+    $('#stChatImageDarknessLabel').textContent = `${$('#stChatImageDarkness').value}%`;
+  };
+  updateChatPreview();
+  $('#stChatImageDarkness').oninput = updateChatPreview;
+  $('#stChatImageFit').onchange = updateChatPreview;
+  $('#stChatImagePosition').onchange = updateChatPreview;
+  $('#stChatImageUpload').onclick = async () => {
+    const result = await api.importChatBackground();
+    if (result.canceled) return;
+    if (!result.ok) return toast(result.error || 'Chatbild konnte nicht geladen werden.', true);
+    S.config = result.config; S.assets.chatBackground = result.asset; applyAppearance(); renderSettingsModule();
+    toast(`Chatbild gespeichert (${result.width} × ${result.height}).`);
+  };
+  $('#stChatImagePreset').onclick = async () => {
+    if (!confirm('Eigenes Chatbild entfernen und das Crazy_Batto-Motiv verwenden?')) return;
+    const result = await api.resetChatBackground();
+    if (!result.ok) return toast(result.error || 'Chatbild konnte nicht zurückgesetzt werden.', true);
+    S.config = result.config; S.assets.chatBackground = result.asset; applyAppearance(); renderSettingsModule();
+    toast('Crazy_Batto-Motiv wiederhergestellt.');
+  };
+  $('#stChatImageSave').onclick = async () => {
+    await saveAndSync({ appearance:{ ...a, chatBackground:{ ...chatBackground, enabled:$('#stChatImageEnabled').checked, showInMain:$('#stChatImageMain').checked, fit:$('#stChatImageFit').value, position:$('#stChatImagePosition').value, darkness:Number($('#stChatImageDarkness').value) / 100 } } }, 'Chatbild-Einstellungen gespeichert.');
+  };
   $('#stDarkness').oninput = () => { $('#stDarknessLabel').textContent = `${$('#stDarkness').value}%`; document.documentElement.style.setProperty('--background-darkness', String(Number($('#stDarkness').value) / 100)); };
   $('#stSave').onclick = async () => {
     const moduleSync = {};
@@ -744,6 +806,7 @@ async function refresh(render = true) {
   S.overlay = state.overlay;
   S.obs = state.obs || {};
   S.secrets = state.secrets || {};
+  S.assets = state.assets || {};
   applyAppearance();
   if (render) renderDashboard();
 }
@@ -781,6 +844,7 @@ function bindStatic() {
 
   $$('[data-copy]').forEach((button) => { button.onclick = () => copy(button.dataset.copy === 'holo' ? $('#holoUrl').textContent : button.dataset.copy === 'coTik' ? $('#coTikUrl').textContent : $('#coTwUrl').textContent); });
   $('#detachBtn').onclick = () => detached ? api.closeDetached() : api.detachChat();
+  $('#chatImageSettings').onclick = () => { setView('settings'); setTimeout(() => $('#chatBackgroundSettings')?.scrollIntoView({ block:'start' }), 0); };
   setInterval(() => { $('#clock').textContent = new Date().toLocaleString('de-DE', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }); }, 1000);
 }
 
@@ -835,6 +899,13 @@ async function boot() {
   api.onTtsSpeak((payload) => {if(!detached)playTts(payload);});
   api.onConfigChanged((config) => {
     S.config = config;
+    applyAppearance();
+    renderDashboard();
+    if (S.view !== 'dashboard') renderModule(S.view);
+  });
+  api.onChatBackgroundChanged?.(({ config, asset }) => {
+    S.config = config;
+    S.assets.chatBackground = asset;
     applyAppearance();
     renderDashboard();
     if (S.view !== 'dashboard') renderModule(S.view);
