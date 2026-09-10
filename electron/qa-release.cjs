@@ -106,8 +106,11 @@ module.exports=async function({win,run,waitFor,checks,dir,profile}){
   await run(`setView('dashboard');renderChat();`);
   await waitFor(()=>run(`const frame=document.querySelector('#tikfinityChatFrame');if(!frame)return false;const box=frame.getBoundingClientRect();return frame.dataset.url==='https://tikfinity.zerody.one/widget/chat?cid=676051'&&frame.src==='https://tikfinity.zerody.one/widget/chat?cid=676051'&&box.width>100&&box.height>100;`),'TikFinity HTTP Chat visible in TikTok tab');
   assert.match(await run(`return document.querySelector('#tikfinityChatFrame').getAttribute('sandbox');`),/allow-scripts/);
+  const loadedTikfinityFrame=await waitFor(()=>win.webContents.mainFrame.framesInSubtree.find(frame=>frame.url==='https://tikfinity.zerody.one/widget/chat?cid=676051'),'TikFinity remote chat frame loaded',30000);
+  assert.equal(await loadedTikfinityFrame.executeJavaScript(`!!document.querySelector('#chatContainer')`),true);
+  await waitFor(()=>run(`return document.querySelector('#tikfinityChatFrameState')?.textContent.startsWith('Quelle geladen');`),'TikFinity chat frame load state');
   await capture('06-TikFinity-HTTP-Chat');
-  checks.push('Saved TikFinity HTTP chat renders directly and visibly in the TikTok chat tab');
+  checks.push('Saved TikFinity HTTP chat renders directly in the TikTok tab and loads the real remote chat document');
   await run(`setView('platforms');`);
   await run(`document.querySelector('#pfTikUrl').value='https://tikfinity.zerody.one/widget/follow?cid=qa-installed';await document.querySelector('#pfSave').onclick();`);
   await waitFor(()=>run(`return S.config.platforms.tikfinity.webWidgets.some(w=>w.url==='https://tikfinity.zerody.one/widget/follow?cid=qa-installed');`),'HTTPS URL imported from WebSocket field');
