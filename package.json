@@ -1,6 +1,6 @@
 {
   "name": "batto-obs-tool",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "Batto OBS Tool 2.1 – modular local-first Multi-Chat, Event Core, OBS, Overlay and Media platform",
   "main": "electron/bootstrap.cjs",
   "author": "Crazy_Batto",
@@ -23,7 +23,7 @@
     "soak": "node scripts/soak.cjs",
     "soak:quick": "node -e \"process.env.SOAK_MINUTES='1';require('./scripts/soak.cjs')\"",
     "prepack:win": "node scripts/restore-app.cjs && electron scripts/prepare-icons.cjs && node scripts/patch-nsis.cjs",
-    "pack:win": "electron-builder --win nsis",
+    "pack:win": "electron-builder --win nsis --publish never",
     "test:storage": "node scripts/storage-regression.cjs",
     "test:runtime": "node scripts/runtime21.cjs"
   },
