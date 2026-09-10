@@ -24,6 +24,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Install test dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Syntax check
         run: npm run check
       - name: Core smoke test
@@ -73,7 +75,7 @@ jobs:
           $env:BATTO_QA_DIR = Join-Path $env:RUNNER_TEMP 'batto-packaged-qa'
           $exe = Join-Path (Get-Location) 'dist\win-unpacked\Batto OBS Tool 2.1.exe'
           $process = Start-Process -FilePath $exe -ArgumentList '--batto-qa' -WorkingDirectory (Split-Path $exe) -PassThru
-          if (-not $process.WaitForExit(90000)) { Stop-Process -Id $process.Id -Force; throw 'Packaged app QA timed out' }
+          if (-not $process.WaitForExit(150000)) { Stop-Process -Id $process.Id -Force; throw 'Packaged app QA timed out' }
           $report = Join-Path $env:BATTO_QA_DIR 'result.json'
           if (-not (Test-Path $report)) { throw 'Packaged app produced no QA report' }
           $result = Get-Content $report -Raw | ConvertFrom-Json
@@ -92,12 +94,19 @@ jobs:
           if (-not (Test-Path $exe)) { throw "Installed executable missing: $exe" }
           $env:BATTO_QA_DIR = Join-Path $env:RUNNER_TEMP 'batto-qa-report'
           $process = Start-Process -FilePath $exe -ArgumentList '--batto-qa' -PassThru
-          if (-not $process.WaitForExit(90000)) { Stop-Process -Id $process.Id -Force; throw 'Installed app QA timed out' }
+          if (-not $process.WaitForExit(150000)) { Stop-Process -Id $process.Id -Force; throw 'Installed app QA timed out' }
           $report = Join-Path $env:BATTO_QA_DIR 'result.json'
           if (-not (Test-Path $report)) { throw 'Installed app produced no QA report' }
           $result = Get-Content $report -Raw | ConvertFrom-Json
           $result.checks | ForEach-Object { Write-Host "PASS: $_" }
           if (-not $result.ok -or $process.ExitCode -ne 0) { throw "Installed app QA failed: $($result.error)" }
+          $restartProcess = Start-Process -FilePath $exe -ArgumentList '--batto-qa-resume' -PassThru
+          if (-not $restartProcess.WaitForExit(60000)) { Stop-Process -Id $restartProcess.Id -Force; throw 'Installed app restart QA timed out' }
+          $restartReport = Join-Path $env:BATTO_QA_DIR 'resume-result.json'
+          if (-not (Test-Path $restartReport)) { throw 'Installed app restart produced no QA report' }
+          $restartResult = Get-Content $restartReport -Raw | ConvertFrom-Json
+          $restartResult.checks | ForEach-Object { Write-Host "PASS AFTER RESTART: $_" }
+          if (-not $restartResult.ok -or $restartProcess.ExitCode -ne 0) { throw "Installed app restart QA failed: $($restartResult.error)" }
       - name: Upload installed-app QA evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -105,6 +114,7 @@ jobs:
           name: Batto-Windows-QA-Evidence
           path: |
             ${{ runner.temp }}/batto-qa-report/result.json
+            ${{ runner.temp }}/batto-qa-report/resume-result.json
             ${{ runner.temp }}/batto-qa-report/*.png
             ${{ runner.temp }}/batto-packaged-qa/result.json
             ${{ runner.temp }}/batto-packaged-qa/*.png

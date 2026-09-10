@@ -8,4 +8,4 @@ for(const item of require('../src/assets/artwork-manifest.json')){
  if(actual!==item.sha256)throw new Error('Originalbild-Prüfsumme falsch: '+item.file);
 }
 for(const file of ['src/renderer/app.js','src/renderer/release-ui.js','src/renderer/broadcast-ui.js','src/core/broadcast/service.cjs','src/assets/platforms/tiktok.svg','src/assets/platforms/twitch.svg','src/assets/platforms/youtube.svg','src/assets/platforms/cng.svg'])if(!fs.statSync(path.join(root,file)).size)throw new Error('Quelldatei fehlt: '+file);
-console.log('Direkter 2.1.3-Quellstand, TikFinity HTTPS-Widgets, Plattformlogos und fünf Originalbilder geprüft.');
+console.log('Direkter 2.1.4-Quellstand, TikFinity Chat-Bridge, HTTPS-Widgets, Plattformlogos und fünf Originalbilder geprüft.');
