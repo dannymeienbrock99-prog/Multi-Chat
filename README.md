@@ -62,6 +62,20 @@ Settings werden validiert und atomar geschrieben. Secrets bleiben außerhalb der
 
 Der Overlay-Port wechselt bei Konflikten **nicht mehr still auf einen anderen Port**. Ein belegter Port wird als klarer Fehler gemeldet.
 
+## TikFinity: TikTok-LIVE-Chat einrichten
+
+Der TikTok-Chat wird standardmäßig als eigener **Batto-Chat** angezeigt. Seine Nachrichten kommen über die lokale Event-API der TikFinity Desktop-App:
+
+1. Die [TikFinity Desktop-App](https://tikfinity.zerody.one/app/) auf demselben Windows-PC wie das Batto OBS Tool starten.
+2. TikFinity vollständig einrichten und dort mit dem gewünschten TikTok-LIVE verbinden. Ein gespeicherter Widget-Link allein stellt noch keine lokale Chatverbindung her.
+3. Im Batto OBS Tool unter **Plattformen & Verbindungen → TikFinity Event-/Chat-Bridge** den offiziellen lokalen Endpunkt `ws://localhost:21213/` eintragen. `ws://127.0.0.1:21213/` ist die gleichwertige Loopback-Adresse.
+4. **Automatisch verbinden** aktivieren und die Verbindung speichern beziehungsweise starten. Die Bridge versucht erneut zu verbinden, wenn TikFinity erst später gestartet wird.
+5. Im Multi-Chat den TikTok-Tab wählen. Neue LIVE-Nachrichten erscheinen jetzt im Batto-Design und stehen zusätzlich für Commands, TTS, Alerts und Overlays bereit.
+
+Der TikFinity-Chat-Link `https://tikfinity.zerody.one/widget/chat?cid=...` ist **optional**. Er kann als umschaltbare **TikFinity Originalansicht** hinterlegt werden, ist aber nur eine Browser-Anzeige. Das Widget zeigt ausschließlich neue Nachrichten nach seinem Laden und ersetzt nicht die lokale WebSocket-Bridge. Für den normalen Betrieb bleibt der Batto-Chat die Standardansicht.
+
+Die offizielle TikFinity-Dokumentation bestätigt den lokalen WebSocket-Endpunkt und dass die Desktop-App auf demselben Computer laufen muss: [TikFinity TikTok LIVE API](https://tikfinity.zerody.one/de/tiktok/dapi).
+
 ## Bestehende Funktionsmodule
 
 Die bisherigen 1.1-Funktionen bleiben die UI-Basis und werden schrittweise auf den 2.1-Core umgestellt:
@@ -69,7 +83,7 @@ Die bisherigen 1.1-Funktionen bleiben die UI-Basis und werden schrittweise auf d
 - Multi-Chat TikTok / Twitch / YouTube / CNG
 - Rechtsklick-Moderation und Verlauf
 - TikFinity Local Bridge und AxelChat
-- eigenes Eingabefeld für den TikFinity-Chat-Link; HTTP wird auf HTTPS angehoben, dauerhaft gespeichert und direkt im TikTok-Tab des Chatfensters angezeigt
+- optionales Eingabefeld für die TikFinity-Originalansicht; HTTP wird auf HTTPS angehoben und dauerhaft getrennt von der lokalen Chat-Bridge gespeichert
 - zusätzliche TikFinity-Browser-Widgets für Follower, Gifts, Likes, Shares, Abos, Ziele, Ranglisten und eigene Anzeigen
 - stabile lokale TikFinity-OBS-URLs unter `http://127.0.0.1:17777/overlay/tikfinity/<widget-id>`
 - originale Plattform-Logos an TikTok-, Twitch-, YouTube- und CNG-Nachrichten im Multi-Chat und Chat-Overlay
@@ -92,7 +106,7 @@ Die bisherigen 1.1-Funktionen bleiben die UI-Basis und werden schrittweise auf d
 
 - keine privaten TikTok-Endpunkte, Signaturmechanismen, Cookie-Hacks oder Bypässe im Core
 - TikFinity-HTTPS-Widgets werden auf `tikfinity.zerody.one/widget/` begrenzt; die Event-/Chat-Bridge bleibt davon getrennt bei `ws://` bzw. `wss://`
-- das direkte TikFinity-Chat-Widget zeigt nur Nachrichten, die nach dem Laden während einer aktiven LIVE-Verbindung eintreffen; für zusammengeführte Nachrichten, Commands und TTS muss zusätzlich die lokale TikFinity-Bridge verbunden sein
+- das optionale TikFinity-Chat-Widget zeigt nur Nachrichten, die nach dem Laden während einer aktiven LIVE-Verbindung eintreffen; Batto-Chat, Commands und TTS verwenden die lokale TikFinity-Bridge
 - Loopback-only als Default für Overlay und interne WebSockets
 - Electron `contextIsolation`, keine Node-Integration im Renderer
 - Secrets via `safeStorage`

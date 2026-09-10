@@ -1,8 +1,9 @@
 'use strict';
 const {app,BrowserWindow,dialog,nativeImage}=require('electron');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),crypto=require('node:crypto');
+const {WebSocketServer}=require('ws');
 module.exports=async function({win,run,waitFor,checks,dir,profile}){
-  assert.equal(app.getVersion(),'2.1.3');
+  assert.equal(app.getVersion(),'2.1.4');
   await run(`window.__qaErrors=[];window.addEventListener('error',e=>window.__qaErrors.push(e.message));window.addEventListener('unhandledrejection',e=>window.__qaErrors.push(String(e.reason?.message||e.reason)));`);
   async function capture(name){await new Promise(r=>setTimeout(r,200));fs.writeFileSync(path.join(dir,name+'.png'),(await win.webContents.capturePage()).toPNG());}
   for(const item of require('../src/assets/artwork-manifest.json'))assert.equal(crypto.createHash('sha256').update(fs.readFileSync(path.join(__dirname,'../src/assets/source',item.file))).digest('hex'),item.sha256);
@@ -100,24 +101,55 @@ module.exports=async function({win,run,waitFor,checks,dir,profile}){
   await run(`setView('platforms');`);
   await waitFor(()=>run(`return !!document.querySelector('#pfTikChatUrl');`),'TikFinity Chat URL field');
   assert.equal(await run(`return S.config.platforms.tikfinity.webWidgets.length;`),0);
-  await run(`document.querySelector('#pfTikChatUrl').value='http://tikfinity.zerody.one/widget/chat?cid=676051';await document.querySelector('#pfTikChatSave').onclick();`);
-  await waitFor(()=>run(`return S.config.platforms.tikfinity.webWidgets.some(w=>w.url==='https://tikfinity.zerody.one/widget/chat?cid=676051');`),'TikFinity Chat URL saved');
-  assert.equal(await run(`return S.chatTab;`),'tiktok');
-  await run(`setView('dashboard');renderChat();`);
-  await waitFor(()=>run(`const frame=document.querySelector('#tikfinityChatFrame');if(!frame)return false;const box=frame.getBoundingClientRect();return frame.dataset.url==='https://tikfinity.zerody.one/widget/chat?cid=676051'&&frame.src==='https://tikfinity.zerody.one/widget/chat?cid=676051'&&box.width>100&&box.height>100;`),'TikFinity HTTP Chat visible in TikTok tab');
-  assert.match(await run(`return document.querySelector('#tikfinityChatFrame').getAttribute('sandbox');`),/allow-scripts/);
-  await waitFor(async()=>{const frame=win.webContents.mainFrame.framesInSubtree.find(item=>item.url==='https://tikfinity.zerody.one/widget/chat?cid=676051');if(!frame)return false;try{return await frame.executeJavaScript(`!!document.querySelector('#chatContainer')`);}catch{return false;}},'TikFinity remote chat document loaded',30000);
-  await waitFor(()=>run(`return document.querySelector('#tikfinityChatFrameState')?.textContent.startsWith('Quelle geladen');`),'TikFinity chat frame load state');
-  await capture('06-TikFinity-HTTP-Chat');
-  checks.push('Saved TikFinity HTTP chat renders directly in the TikTok tab and loads the real remote chat document');
-  await run(`setView('platforms');`);
-  await run(`document.querySelector('#pfTikUrl').value='https://tikfinity.zerody.one/widget/follow?cid=qa-installed';await document.querySelector('#pfSave').onclick();`);
-  await waitFor(()=>run(`return S.config.platforms.tikfinity.webWidgets.some(w=>w.url==='https://tikfinity.zerody.one/widget/follow?cid=qa-installed');`),'HTTPS URL imported from WebSocket field');
-  assert.match(await run(`return S.config.platforms.tikfinity.url;`),/^wss?:\/\//);
-  const qaWidget=await run(`return S.config.platforms.tikfinity.webWidgets.find(w=>w.url==='https://tikfinity.zerody.one/widget/follow?cid=qa-installed');`);
-  const qaRedirect=await fetch('http://127.0.0.1:17777/overlay/tikfinity/'+encodeURIComponent(qaWidget.id),{redirect:'manual'});
-  assert.equal(qaRedirect.status,302);assert.equal(qaRedirect.headers.get('location'),qaWidget.url);
-  checks.push('TikFinity HTTPS URL survives wrong-field paste, persists separately and has a stable OBS route');
+  const tikfinityQaMessage='QA TikFinity: <b>sichtbar</b> & "sicher" 🎭';
+  const tikfinityQaServer=new WebSocketServer({host:'127.0.0.1',port:0});
+  await new Promise((resolve,reject)=>{tikfinityQaServer.once('listening',resolve);tikfinityQaServer.once('error',reject);});
+  const tikfinityQaAddress=tikfinityQaServer.address();
+  assert.equal(typeof tikfinityQaAddress,'object');
+  const tikfinityQaUrl=`ws://127.0.0.1:${tikfinityQaAddress.port}/`;
+  let tikfinityQaClient;
+  try {
+    const connected=new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>reject(new Error('TikFinity QA WebSocket connection timed out')),10000);
+      tikfinityQaServer.once('connection',(socket)=>{clearTimeout(timer);resolve(socket);});
+    });
+    [tikfinityQaClient]=await Promise.all([
+      connected,
+      run(`document.querySelector('#pfTikUrl').value=${JSON.stringify(tikfinityQaUrl)};document.querySelector('#pfTikAuto').checked=true;await document.querySelector('[data-connect="tikfinity"]').onclick();`)
+    ]);
+    await waitFor(()=>run(`return (await window.batto.getState()).adapters.tikfinity.connected===true;`),'TikFinity loopback bridge connected');
+    tikfinityQaClient.send(JSON.stringify({event:'chat',data:{eventId:'qa-tikfinity-message',userIdString:'qa-42',uniqueId:'qa_fixture',nickname:'QA TikTok Nutzer',comment:tikfinityQaMessage}}));
+    await waitFor(()=>run(`return (await window.batto.getState()).messages.some(m=>m.platform==='tiktok'&&m.username==='qa_fixture'&&m.displayName==='QA TikTok Nutzer'&&m.message===${JSON.stringify(tikfinityQaMessage)});`),'TikFinity adapter message reached ChatCore');
+    await run(`S.chatTab='tiktok';S.tiktokChatView='native';setView('dashboard');renderChat();`);
+    await waitFor(()=>run(`const row=[...document.querySelectorAll('#chatList .chat-row')].find(item=>item.querySelector('.chat-user')?.dataset.user==='qa_fixture');if(!row)return false;const user=row.querySelector('.chat-user[data-platform="tiktok"]'),text=row.querySelector('.chat-text'),logo=row.querySelector('.platform-icon.tiktok img[alt="TikTok"]');return user?.textContent==='QA TikTok Nutzer'&&text?.textContent===${JSON.stringify(tikfinityQaMessage)}&&!text.querySelector('*')&&logo?.complete&&logo.naturalWidth>0&&row.getBoundingClientRect().height>0;`),'Visible native TikFinity chat row with escaped text and TikTok logo');
+    checks.push('Real TikFinity WebSocket -> adapter -> Event Core -> Chat Core -> IPC -> visible native TikTok row; literal escaping and original TikTok logo verified');
+
+    await run(`setView('platforms');document.querySelector('#pfTikChatUrl').value='http://tikfinity.zerody.one/widget/chat?cid=676051';await document.querySelector('#pfTikChatSave').onclick();`);
+    await waitFor(()=>run(`return S.config.platforms.tikfinity.webWidgets.some(w=>w.url==='https://tikfinity.zerody.one/widget/chat?cid=676051');`),'TikFinity Chat URL saved');
+    assert.deepEqual(await run(`return {tab:S.chatTab,view:S.tiktokChatView};`),{tab:'tiktok',view:'native'});
+    await run(`setView('dashboard');renderChat();`);
+    await waitFor(()=>run(`return S.tiktokChatView==='native'&&!!document.querySelector('#tikfinityNativeState')&&!!document.querySelector('#tikfinityWidgetView')&&!document.querySelector('#tikfinityChatFrame')&&document.querySelector('#chatList').textContent.includes(${JSON.stringify(tikfinityQaMessage)});`),'Native TikTok chat remains the default view');
+    await capture('06-TikFinity-Native-Chat');
+    await run(`document.querySelector('#tikfinityWidgetView').click();`);
+    await waitFor(()=>run(`const frame=document.querySelector('#tikfinityChatFrame');if(!frame)return false;const box=frame.getBoundingClientRect();return S.tiktokChatView==='widget'&&frame.dataset.url==='https://tikfinity.zerody.one/widget/chat?cid=676051'&&frame.src==='https://tikfinity.zerody.one/widget/chat?cid=676051'&&box.width>100&&box.height>100;`),'TikFinity original view selectable');
+    assert.match(await run(`return document.querySelector('#tikfinityChatFrame').getAttribute('sandbox');`),/allow-scripts/);
+    await capture('06-TikFinity-Originalansicht');
+    await run(`document.querySelector('#tikfinityNativeView').click();`);
+    await waitFor(()=>run(`return S.tiktokChatView==='native'&&!document.querySelector('#tikfinityChatFrame')&&document.querySelector('#chatList').textContent.includes(${JSON.stringify(tikfinityQaMessage)});`),'Return from TikFinity original view to native chat');
+    checks.push('Saved TikFinity HTTP chat keeps Batto native chat as default and exposes a working Originalansicht toggle');
+
+    await run(`setView('platforms');document.querySelector('#pfTikUrl').value='https://tikfinity.zerody.one/widget/follow?cid=qa-installed';await document.querySelector('#pfSave').onclick();`);
+    await waitFor(()=>run(`return S.config.platforms.tikfinity.webWidgets.some(w=>w.url==='https://tikfinity.zerody.one/widget/follow?cid=qa-installed');`),'HTTPS URL imported from WebSocket field');
+    assert.match(await run(`return S.config.platforms.tikfinity.url;`),/^wss?:\/\//);
+    const qaWidget=await run(`return S.config.platforms.tikfinity.webWidgets.find(w=>w.url==='https://tikfinity.zerody.one/widget/follow?cid=qa-installed');`);
+    const qaRedirect=await fetch('http://127.0.0.1:17777/overlay/tikfinity/'+encodeURIComponent(qaWidget.id),{redirect:'manual'});
+    assert.equal(qaRedirect.status,302);assert.equal(qaRedirect.headers.get('location'),qaWidget.url);
+    checks.push('TikFinity HTTPS URL survives wrong-field paste, persists separately and has a stable OBS route');
+  } finally {
+    try { await run(`await window.batto.disconnectAdapter('tikfinity');S.config=await window.batto.saveConfig({platforms:{tikfinity:{...S.config.platforms.tikfinity,url:'ws://127.0.0.1:21213/',autoConnect:true}}});`); } catch {}
+    for(const client of tikfinityQaServer.clients)client.terminate();
+    await new Promise((resolve)=>tikfinityQaServer.close(()=>resolve()));
+  }
   // Exercise the same normalizer and action engine on every platform with local-only outputs.
   await run(`await window.batto.saveConfig({commands:[...S.config.commands,{id:'qa-all',enabled:true,trigger:'!qa-all',platform:'all',cooldownSeconds:0,actions:[{type:'chat',platform:'local',text:'QA PLATFORM {platform}'}]}]});`);
   for(const platform of ['twitch','tiktok','cng','youtube']){
@@ -145,11 +177,11 @@ module.exports=async function({win,run,waitFor,checks,dir,profile}){
   checks.push('Overlay HTTP works; cross-origin access is denied');
   assert.deepEqual(await run('return window.__qaErrors;'),[]);
   const saved=JSON.parse(fs.readFileSync(path.join(profile,'Batto-OBS-Tool/settings.json'),'utf8'));
-  assert.equal(saved.schemaVersion,5);assert.equal(saved.autoBroadcast.items.length,1);assert.equal(saved.autoBroadcast.items[0].name,'QA Broadcast B');assert.equal(saved.tts.volume,.37);
+  assert.equal(saved.schemaVersion,6);assert.equal(saved.autoBroadcast.items.length,1);assert.equal(saved.autoBroadcast.items[0].name,'QA Broadcast B');assert.equal(saved.tts.volume,.37);
   assert.equal(saved.appearance.chatBackground.mode,'custom');assert.equal(saved.appearance.chatBackground.customName,'crazy-batto-chat-default.jpg');assert.equal(saved.appearance.chatBackground.fit,'cover');assert.equal(saved.appearance.chatBackground.darkness,.63);assert.equal(fs.existsSync(saved.appearance.chatBackground.customPath),true);
   assert.equal(saved.appearance.chatIcons.local.mode,'custom');assert.equal(saved.appearance.chatIcons.local.customName,'crazy-batto-chat-default.jpg');assert.equal(fs.existsSync(saved.appearance.chatIcons.local.customPath),true);assert.deepEqual(nativeImage.createFromPath(saved.appearance.chatIcons.local.customPath).getSize(),{width:128,height:128});
-  const tikfinityChatUrl='https://tikfinity.zerody.one/widget/chat?cid=676051';assert.equal(saved.platforms.tikfinity.webWidgets.some(widget=>widget.url===tikfinityChatUrl),true);
-  fs.writeFileSync(path.join(dir,'resume-expectations.json'),JSON.stringify({schemaVersion:5,broadcasts:1,broadcastName:'QA Broadcast B',volume:.37,tikfinityChatUrl,chatBackgroundName:'crazy-batto-chat-default.jpg',chatBackgroundPath:saved.appearance.chatBackground.customPath,localChatIconName:'crazy-batto-chat-default.jpg',localChatIconPath:saved.appearance.chatIcons.local.customPath}));
+  const tikfinityChatUrl='https://tikfinity.zerody.one/widget/chat?cid=676051';assert.equal(saved.platforms.tikfinity.webWidgets.some(widget=>widget.url===tikfinityChatUrl),true);assert.equal(saved.platforms.tikfinity.autoConnect,true);
+  fs.writeFileSync(path.join(dir,'resume-expectations.json'),JSON.stringify({schemaVersion:6,broadcasts:1,broadcastName:'QA Broadcast B',volume:.37,tikfinityChatUrl,tikfinityAutoConnect:true,chatBackgroundName:'crazy-batto-chat-default.jpg',chatBackgroundPath:saved.appearance.chatBackground.customPath,localChatIconName:'crazy-batto-chat-default.jpg',localChatIconPath:saved.appearance.chatIcons.local.customPath}));
   await run(`setView('start');`);
-  checks.push('No renderer errors; persisted schema-5 settings ready for independent restart test');
+  checks.push('No renderer errors; persisted schema-6 settings ready for independent restart test');
 };
