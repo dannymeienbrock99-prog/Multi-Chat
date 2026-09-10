@@ -20,7 +20,7 @@ class AlertQueue extends EventEmitter {
       id: payload.eventId || payload.id || `alert-${Date.now()}-${++this.sequence}`,
       payload,
       priority: Number(payload.priority ?? payload.data?.priority ?? 0),
-      durationMs: Math.max(250, Number(payload.durationMs ?? payload.data?.durationMs ?? this.defaultDurationMs)),
+      durationMs: Math.max(250, Number(payload.durationMs ?? payload.data?.durationMs ?? (Number(payload.data?.durationSeconds)>0 ? Number(payload.data.durationSeconds)*1000 : this.defaultDurationMs))),
       queuedAt: Date.now()
     };
     const duplicate = this.queue.some((x) => x.id === item.id) || this.active?.id === item.id;

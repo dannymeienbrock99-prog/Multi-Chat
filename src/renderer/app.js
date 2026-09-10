@@ -1,72 +1,731 @@
-const api=window.batto;
-const detached=new URLSearchParams(location.search).get('detached')==='1';
-const S={config:null,messages:[],logs:[],moderation:{},history:[],adapters:{},overlay:null,obs:{},secrets:{},chatTab:'all',modTab:'twitch',contextUser:null,view:'dashboard',system:null};
-const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
-const esc=(v='')=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-const time=iso=>{const d=new Date(iso);return Number.isNaN(d.getTime())?'':d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})};
-function toast(msg,error=false){const el=$('#toast');el.textContent=msg;el.classList.toggle('error',error);el.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>el.hidden=true,3600)}
-function statusClass(s){return s?.connected?'ok':s?.state==='error'?'error':''}
-function platformIcon(p){return p==='tiktok'?'TT':p==='twitch'?'TW':p==='youtube'?'YT':p==='cng'?'CNG':'•'}
-function setView(view){S.view=view;$$('.view').forEach(v=>v.classList.toggle('active',v.dataset.viewPanel===view));$$('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.view===view));if(view!=='dashboard')renderModule(view)}
-function counts(p){return p==='all'?S.messages.length:S.messages.filter(m=>m.platform===p).length}
+const api = window.batto;
+const detached = new URLSearchParams(location.search).get('detached') === '1';
 
-function renderChat(){const tabs=[['all','Alle'],['tiktok','TikTok'],['twitch','Twitch'],['cng','CNG'],['youtube','YouTube']];$('#chatTabs').innerHTML=tabs.map(([id,n])=>`<button class="${S.chatTab===id?'active':''}" data-chat-tab="${id}">${n} (${counts(id)})</button>`).join('');$$('[data-chat-tab]').forEach(b=>b.onclick=()=>{S.chatTab=b.dataset.chatTab;renderChat()});const rows=S.chatTab==='all'?S.messages:S.messages.filter(m=>m.platform===S.chatTab);$('#chatList').innerHTML=rows.length?rows.slice(-250).map(m=>`<div class="chat-row"><span class="chat-time">${time(m.timestamp)}</span><span class="platform-icon ${m.platform}">${platformIcon(m.platform)}</span><span class="chat-user ${m.platform}" data-user="${esc(m.username)}" data-platform="${esc(m.platform)}">${esc(m.displayName||m.username)}</span><span class="chat-text">${esc(m.message)}</span></div>`).join(''):`<div class="empty"><div><b>Noch keine Nachrichten</b><br><small>TikFinity/AxelChat/Twitch verbinden oder Testnachricht senden.</small></div></div>`;$$('.chat-user').forEach(el=>el.oncontextmenu=e=>{e.preventDefault();S.contextUser={username:el.dataset.user,platform:el.dataset.platform};const menu=$('#contextMenu');menu.hidden=false;menu.style.left=`${Math.min(e.clientX,innerWidth-245)}px`;menu.style.top=`${Math.min(e.clientY,innerHeight-270)}px`});if(S.config?.multiChat?.autoScroll)$('#chatList').scrollTop=$('#chatList').scrollHeight}
+const S = {
+  config: null,
+  messages: [],
+  logs: [],
+  moderation: {},
+  history: [],
+  adapters: {},
+  overlay: null,
+  obs: {},
+  secrets: {},
+  chatTab: 'all',
+  modTab: 'twitch',
+  contextUser: null,
+  view: 'dashboard',
+  system: null,
+  commandDraft: [],
+  commandEdit: null,
+  eventDraft: [],
+  eventEdit: null,
+  poolEdit: null,
+  ttsVoices: [],
+  audioOutputs: []
+};
 
-function stateFor(p){return S.moderation?.[p]||{moderators:[],muted:[],blocked:[]}}
-function modEntries(title,list,kind){return`<div class="mod-box"><div class="mod-title"><span>${title} (${list.length})</span><span>＋</span></div><div class="mod-list">${list.length?list.map(x=>`<div class="mod-entry"><div><b>${esc(x.username)}</b>${x.reason?`<small><br>Grund: ${esc(x.reason)}</small>`:''}</div><button data-mod-inline="${kind}" data-user="${esc(x.username)}">⋮</button></div>`).join(''):'<small style="color:var(--muted)">Keine Einträge</small>'}</div></div>`}
-function renderModeration(){const tabs=['tiktok','twitch','cng','youtube'];$('#modTabs').innerHTML=tabs.map(p=>`<button data-mod-tab="${p}" class="${S.modTab===p?'active':''}">${p[0].toUpperCase()+p.slice(1)}</button>`).join('');$$('[data-mod-tab]').forEach(b=>b.onclick=()=>{S.modTab=b.dataset.modTab;renderModeration()});const st=stateFor(S.modTab);$('#modColumns').innerHTML=modEntries('Moderatoren',st.moderators||[],'removeModerator')+modEntries('Stummgeschaltet',st.muted||[],'unmute')+modEntries('Blockiert',st.blocked||[],'unblock');$$('[data-mod-inline]').forEach(b=>b.onclick=async()=>{await doModeration({username:b.dataset.user,platform:S.modTab},b.dataset.modInline,'')});renderHistory()}
-function actionLabel(a){return({addModerator:'Moderator +',removeModerator:'Moderator −',mute:'Stummgeschaltet',unmute:'Entstummt',block:'Blockiert',unblock:'Entblockt'})[a]||a}
-function renderHistory(){const f=$('#historyPlatform')?.value||'all';const rows=S.history.filter(x=>f==='all'||x.platform===f).slice(-100).reverse();const body=$('#historyBody');if(!body)return;body.innerHTML=rows.length?rows.map(x=>`<tr><td>${time(x.timestamp)}</td><td>${esc(x.username)}</td><td>${esc(actionLabel(x.action))}</td><td>${esc(x.reason||'–')}</td><td title="${esc(x.lastMessage||'')}">${esc(x.lastMessage||'–')}</td><td>${esc(x.executor||'–')}</td><td>${esc(x.platform)}</td><td class="result-ok">${esc(x.result||'Lokal')}</td></tr>`).join(''):`<tr><td colspan="8" style="text-align:center;color:var(--muted)">Noch kein Moderationsverlauf.</td></tr>`}
-async function doModeration(user,action,reason){if(!user)return;if((action==='mute'||action==='block')&&!reason)reason=prompt(action==='mute'?'Grund für Stummschaltung:':'Grund für Blockierung:','')||'';const r=await api.moderate({...user,action,reason,resultMode:'local'});$('#contextMenu').hidden=true;if(!r.ok)return toast(r.error||'Moderation fehlgeschlagen',true);await refresh();toast(`${user.username}: ${actionLabel(action)}`)}
+const $ = (selector) => document.querySelector(selector);
+const $$ = (selector) => [...document.querySelectorAll(selector)];
+const esc = (value = '') => String(value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char]));
+const time = (iso) => {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+};
 
-function overlayBase(){const h=S.overlay?.host||S.config?.http?.host||'127.0.0.1',p=S.overlay?.port||S.config?.http?.port||8787;return`http://${h}:${p}`}
-function renderHologram(){const d=S.config.chatDesign||{};$('#holoUserEnabled').checked=d.usernameEnabled!==false;$('#holoMessageEnabled').checked=d.messageEnabled!==false;$('#holoFont').value=['Segoe UI','Arial','Impact','Verdana','BattoCustom'].includes(d.fontFamily)?d.fontFamily:'Segoe UI';$('#holoUserColor').value=d.usernameColor||'#00d4ff';$('#holoMsgColor').value=d.messageColor||'#ffffff';$('#holoGlow').value=Number(d.glow||10);$('#holoOpacity').value=Math.round(Number(d.opacity??.92)*100);$('#holoUrl').textContent=`${overlayBase()}/overlay/chat`}
-async function saveHologram(){const d={...S.config.chatDesign,usernameEnabled:$('#holoUserEnabled').checked,messageEnabled:$('#holoMessageEnabled').checked,fontFamily:$('#holoFont').value,usernameColor:$('#holoUserColor').value,messageColor:$('#holoMsgColor').value,glow:Number($('#holoGlow').value),opacity:Number($('#holoOpacity').value)/100};S.config=await api.saveConfig({chatDesign:d});toast('Hologramm gespeichert.')}
-
-function renderCohost(){const c=S.config.cohost||{},places=Math.max(1,Math.min(9,Number(c.places||4)));$('#coEnabled').checked=c.enabled!==false;$('#coPlaces').value=String(places);$$('[data-co-format]').forEach(b=>b.classList.toggle('active',b.dataset.coFormat===(c.format||'tiktok')));const slots=[...(c.slots||[])];while(slots.length<places)slots.push({label:`Gast ${slots.length+1}`,source:''});$('#coSlotList').innerHTML=slots.slice(0,places).map((s,i)=>`<div class="slot-row"><span>Platz ${i+1}</span><input data-co-slot="${i}" value="${esc(s.source||s.label||'')}" placeholder="Quelle / Gast / Browser-URL"></div>`).join('');$('#coPreview').style.gridTemplateColumns=places<=1?'1fr':places<=4?'repeat(2,1fr)':'repeat(3,1fr)';$('#coPreview').innerHTML=slots.slice(0,places).map((s,i)=>`<div class="guest-preview"><div><b>${esc(s.label||`Gast ${i+1}`)}</b><br>${s.source?'<span>Quelle gesetzt</span>':'<span>keine Quelle</span>'}</div></div>`).join('');$('#coTikUrl').textContent=`${overlayBase()}/cohost/tiktok`;$('#coTwUrl').textContent=`${overlayBase()}/cohost/twitch`}
-async function saveCohost(){const old=S.config.cohost||{},places=Number($('#coPlaces').value||4),format=$('[data-co-format].active')?.dataset.coFormat||'tiktok',slots=[];for(let i=0;i<places;i++){const v=$(`[data-co-slot="${i}"]`)?.value?.trim()||'';slots.push({label:v&&!/^https?:\/\//i.test(v)?v:`Gast ${i+1}`,source:/^https?:\/\//i.test(v)?v:''})}S.config=await api.saveConfig({cohost:{...old,enabled:$('#coEnabled').checked,places,format,slots}});renderCohost();toast('Co-Host gespeichert.')}
-
-function connItem(icon,name,sub,status){const cls=status?.connected?'ok':status?.state==='error'?'error':'';const text=status?.connected?'Verbunden':status?.state||'Nicht verbunden';return`<div class="connection-item"><span class="ico">${icon}</span><div><strong>${name}</strong><small>${sub}</small></div><span class="conn-state ${cls}">${esc(text)}</span></div>`}
-function renderConnections(){const a=S.adapters;$('#connectionList').innerHTML=connItem('TF','TikFinity Local Bridge','ohne Euler/API · ws://127.0.0.1:21213/',a.tikfinity)+connItem('AX','AxelChat WebSocket','lokale Chat-Bridge',a.axelchat)+connItem('TW','Twitch Direkt-Chat','Nur-Lesen ohne Tokenfeld',a.twitch)+connItem('YT','YouTube Live-Chat','Data API mit eigener Konfiguration',a.youtube)+connItem('CNG','CNG Local','lokal / Bridge', {connected:true,state:'local'});$('#obsChip').className=`chip ${S.obs?.connected?'ok':S.obs?.state==='error'?'error':''}`;$('#overlayChip').className=`chip ${S.overlay?.running?'ok':'error'}`;$('#overlayChip').innerHTML=`<i></i>Overlay ${S.overlay?.port||S.config?.http?.port||8787}`;$('#tikfinityChip').className=`chip ${a.tikfinity?.connected?'ok':a.tikfinity?.state==='error'?'error':''}`}
-function renderDashboard(){renderChat();renderModeration();renderHistory();renderHologram();renderCohost();renderConnections()}
-
-function section(title,html){return`<section class="panel-section"><h3>${title}</h3>${html}</section>`}
-function renderModule(view){if(view==='moderation')renderModerationModule();if(view==='filters')renderFiltersModule();if(view==='hologram')renderHoloModule();if(view==='cohost')renderCohostModule();if(view==='platforms')renderPlatformsModule();if(view==='commands')renderCommandsModule();if(view==='hotkeys')renderHotkeysModule();if(view==='events')renderEventsModule();if(view==='media')renderMediaModule();if(view==='pools')renderPoolsModule();if(view==='tts')renderTtsModule();if(view==='discord')renderDiscordModule();if(view==='backups')renderBackupModule();if(view==='settings')renderSettingsModule()}
-function renderModerationModule(){const el=$('#moderationModule');const tabs=['tiktok','twitch','cng','youtube'];el.innerHTML=`<div class="tabs">${tabs.map(p=>`<button data-mm-tab="${p}" class="${S.modTab===p?'active':''}">${p}</button>`).join('')}</div><div id="mmLists" class="mod-columns"></div>${section('Moderationsverlauf','<div class="table-scroll"><table><thead><tr><th>Zeit</th><th>Name</th><th>Aktion</th><th>Grund</th><th>Letzte Nachricht</th><th>Durch</th><th>Plattform</th><th>Ergebnis</th></tr></thead><tbody id="mmHistory"></tbody></table></div>')}`;const st=stateFor(S.modTab);$('#mmLists').innerHTML=modEntries('Moderatoren',st.moderators||[],'removeModerator')+modEntries('Stummgeschaltet',st.muted||[],'unmute')+modEntries('Blockiert',st.blocked||[],'unblock');$('#mmHistory').innerHTML=S.history.slice().reverse().map(x=>`<tr><td>${time(x.timestamp)}</td><td>${esc(x.username)}</td><td>${esc(actionLabel(x.action))}</td><td>${esc(x.reason||'–')}</td><td>${esc(x.lastMessage||'–')}</td><td>${esc(x.executor||'–')}</td><td>${esc(x.platform)}</td><td class="result-ok">${esc(x.result)}</td></tr>`).join('')||'<tr><td colspan="8">Noch kein Verlauf.</td></tr>';$$('[data-mm-tab]').forEach(b=>b.onclick=()=>{S.modTab=b.dataset.mmTab;renderModerationModule()});$$('[data-mod-inline]').forEach(b=>b.onclick=()=>doModeration({username:b.dataset.user,platform:S.modTab},b.dataset.modInline,''))}
-function renderFiltersModule(){const c=S.config.filters;$('#filtersModule').innerHTML=section('Neuen Filter anlegen',`<div class="form-grid three"><div><label>Begriff</label><input id="fTerm"></div><div><label>Plattform</label><select id="fPlatform"><option value="all">Alle</option><option>tiktok</option><option>twitch</option><option>cng</option><option>youtube</option></select></div><div><label>Aktion</label><select id="fAction"><option value="hide">Ausblenden</option><option value="mark">Markieren</option><option value="mute">Stummschalten</option><option value="block">Blockieren</option></select></div></div><div class="toolbar"><button class="primary" id="fAdd">Hinzufügen</button></div>`)+section('Aktive Filter',`<div class="list-grid">${(c.rules||[]).map(r=>`<div class="list-row"><b>${esc(r.term)}</b><small>${esc(r.platform)} · ${esc(r.action)}</small><button data-filter-del="${r.id}">Löschen</button></div>`).join('')||'<small>Keine Filter.</small>'}</div>`);$('#fAdd').onclick=async()=>{const r=await api.addFilter({term:$('#fTerm').value,platform:$('#fPlatform').value,action:$('#fAction').value});if(!r.ok)return toast(r.error,true);await refresh();renderFiltersModule();toast('Filter hinzugefügt.')};$$('[data-filter-del]').forEach(b=>b.onclick=async()=>{await api.removeFilter(b.dataset.filterDel);await refresh();renderFiltersModule()})}
-function renderHoloModule(){const d=S.config.chatDesign;$('#holoModule').innerHTML=section('Hologramm-Design',`<div class="form-grid three"><div><label>Schriftart</label><select id="mhFont"><option>Segoe UI</option><option>Arial</option><option>Impact</option><option>Verdana</option><option>BattoCustom</option></select></div><div><label>Benutzerfarbe</label><input id="mhUser" type="color" value="${d.usernameColor}"></div><div><label>Nachrichtenfarbe</label><input id="mhMsg" type="color" value="${d.messageColor}"></div><div><label>Schriftgröße</label><input id="mhSize" type="number" min="10" max="80" value="${d.fontSize}"></div><div><label>Glow</label><input id="mhGlow" type="number" min="0" max="60" value="${d.glow}"></div><div><label>Anzeigedauer</label><input id="mhSec" type="number" min="2" max="120" value="${d.displaySeconds}"></div></div><div class="toolbar"><button id="mhImportFont">Eigene Schrift laden</button><button class="primary" id="mhSave">Speichern</button><button id="mhPreview">Overlay öffnen</button></div>`)+section('OBS-Browserquelle',`<div class="url-row"><span>Chat</span><code>${overlayBase()}/overlay/chat</code><button id="mhCopy">URL kopieren</button></div>`);$('#mhFont').value=d.fontFamily||'Segoe UI';$('#mhImportFont').onclick=async()=>{const r=await api.importFont();if(r.ok){S.config=r.config;renderHoloModule();toast('Schrift importiert.')}};$('#mhSave').onclick=async()=>{S.config=await api.saveConfig({chatDesign:{...d,fontFamily:$('#mhFont').value,usernameColor:$('#mhUser').value,messageColor:$('#mhMsg').value,fontSize:Number($('#mhSize').value),glow:Number($('#mhGlow').value),displaySeconds:Number($('#mhSec').value)}});renderHologram();toast('Hologramm gespeichert.')};$('#mhPreview').onclick=()=>api.openOverlay('/overlay/chat');$('#mhCopy').onclick=()=>copy(`${overlayBase()}/overlay/chat`)}
-function renderCohostModule(){const c=S.config.cohost,places=Number(c.places||4);$('#cohostModule').innerHTML=section('Format & Plätze',`<div class="form-grid"><div><label>Format</label><select id="mcFormat"><option value="tiktok">TikTok 1080 × 1920</option><option value="twitch">Twitch 1920 × 1080</option></select></div><div><label>Plätze</label><select id="mcPlaces">${[1,2,3,4,6,9].map(n=>`<option ${n===places?'selected':''}>${n}</option>`).join('')}</select></div></div>`)+section('Plätze / Quellen',`<div id="mcSlots" class="list-grid"></div>`)+section('OBS-Ausgabe',`<div class="url-row"><span>TikTok</span><code>${overlayBase()}/cohost/tiktok</code><button data-copy-url="${overlayBase()}/cohost/tiktok">Kopieren</button></div><div class="url-row"><span>Twitch</span><code>${overlayBase()}/cohost/twitch</code><button data-copy-url="${overlayBase()}/cohost/twitch">Kopieren</button></div><div class="toolbar"><button class="primary" id="mcSave">Speichern</button><button id="mcTik">TikTok Vorschau</button><button id="mcTw">Twitch Vorschau</button></div>`);$('#mcFormat').value=c.format||'tiktok';const slots=[...(c.slots||[])];while(slots.length<places)slots.push({label:`Gast ${slots.length+1}`,source:''});$('#mcSlots').innerHTML=slots.slice(0,places).map((s,i)=>`<div class="form-grid"><div><label>Platz ${i+1} Name</label><input data-mc-label="${i}" value="${esc(s.label||`Gast ${i+1}`)}"></div><div><label>Quelle / Browser-URL (optional)</label><input data-mc-src="${i}" value="${esc(s.source||'')}"></div></div>`).join('');$('#mcPlaces').onchange=async()=>{S.config=await api.saveConfig({cohost:{...c,places:Number($('#mcPlaces').value)}});renderCohostModule()};$('#mcSave').onclick=async()=>{const n=Number($('#mcPlaces').value),arr=[];for(let i=0;i<n;i++)arr.push({label:$(`[data-mc-label="${i}"]`)?.value||`Gast ${i+1}`,source:$(`[data-mc-src="${i}"]`)?.value||''});S.config=await api.saveConfig({cohost:{...c,format:$('#mcFormat').value,places:n,slots:arr}});renderCohost();toast('Co-Host gespeichert.')};$('#mcTik').onclick=()=>api.openOverlay('/cohost/tiktok');$('#mcTw').onclick=()=>api.openOverlay('/cohost/twitch');$$('[data-copy-url]').forEach(b=>b.onclick=()=>copy(b.dataset.copyUrl))}
-
-function adapterCard(name,title,desc,fields=''){const s=S.adapters[name]||{};return section(title,`<p>${desc}</p>${fields}<div class="toolbar"><button class="primary" data-connect="${name}">${s.connected?'Verbunden':'Verbinden'}</button><button data-disconnect="${name}">Trennen</button><span class="conn-state ${statusClass(s)}">${esc(s.error||s.state||'idle')}</span></div>`)}
-function renderPlatformsModule(){const c=S.config.platforms;$('#platformsModule').innerHTML=adapterCard('tikfinity','TikFinity Local Bridge','Lokale Event API ohne Euler/API. TikFinity Desktop muss auf demselben PC laufen.',`<div class="form-grid"><div><label>WebSocket</label><input id="pfTikUrl" value="${esc(c.tikfinity.url)}"></div><div><label>Reconnect Sekunden</label><input id="pfTikRec" type="number" value="${c.tikfinity.reconnectSeconds}"></div></div><label class="check"><input id="pfTikAuto" type="checkbox" ${c.tikfinity.autoConnect?'checked':''}> Automatisch verbinden</label>`)+adapterCard('axelchat','AxelChat WebSocket','Zusätzliche lokale Chat-Bridge.',`<div class="form-grid"><div><label>WebSocket</label><input id="pfAxUrl" value="${esc(c.axelchat.url)}"></div><div><label>Reconnect Sekunden</label><input id="pfAxRec" type="number" value="${c.axelchat.reconnectSeconds}"></div></div><label class="check"><input id="pfAxAuto" type="checkbox" ${c.axelchat.autoConnect?'checked':''}> Automatisch verbinden</label>`)+adapterCard('twitch','Twitch Direkt-Chat','Öffentlichen Chat direkt lesen. Kein Tokenfeld; Senden/Plattformmoderation bleiben deaktiviert.',`<div><label>Channel / Twitch-URL / Dashboard-URL</label><input id="pfTwChannel" value="${esc(c.twitch.channel)}"></div><label class="check"><input id="pfTwAuto" type="checkbox" ${c.twitch.autoConnect?'checked':''}> Automatisch verbinden</label>`)+adapterCard('youtube','YouTube Live-Chat','Live Chat ID + eigener API Key. Key wird verschlüsselt gespeichert.',`<div class="form-grid"><div><label>Live Chat ID</label><input id="pfYtId" value="${esc(c.youtube.liveChatId)}"></div><div><label>API Key ${S.secrets.youtubeApiKey?'(gespeichert)':''}</label><input id="pfYtKey" type="password" placeholder="${S.secrets.youtubeApiKey?'nur zum Ändern eingeben':'API Key'}"></div><div><label>Polling ms</label><input id="pfYtPoll" type="number" value="${c.youtube.pollMs}"></div></div><label class="check"><input id="pfYtAuto" type="checkbox" ${c.youtube.autoConnect?'checked':''}> Automatisch verbinden</label>`)+section('OBS WebSocket 4455',`<div class="form-grid"><div><label>Adresse</label><input id="pfObsUrl" value="${esc(S.config.obs.url)}"></div><div><label>Passwort ${S.secrets.obsPassword?'(gespeichert)':''}</label><input id="pfObsPass" type="password" placeholder="${S.secrets.obsPassword?'nur zum Ändern':'optional'}"></div></div><label class="check"><input id="pfObsAuto" type="checkbox" ${S.config.obs.autoConnect?'checked':''}> Automatisch verbinden</label><div class="toolbar"><button class="primary" id="pfObsConnect">Speichern & verbinden</button><button id="pfObsDisconnect">Trennen</button><span class="conn-state ${S.obs.connected?'ok':S.obs.state==='error'?'error':''}">${esc(S.obs.error||S.obs.state||'idle')}</span></div>`)+`<div class="toolbar"><button class="primary" id="pfSave">Plattform-Einstellungen speichern</button></div>`;
-  $('#pfSave').onclick=async()=>{const patch={platforms:{...c,tikfinity:{...c.tikfinity,url:$('#pfTikUrl').value,reconnectSeconds:Number($('#pfTikRec').value),autoConnect:$('#pfTikAuto').checked},axelchat:{...c.axelchat,url:$('#pfAxUrl').value,reconnectSeconds:Number($('#pfAxRec').value),autoConnect:$('#pfAxAuto').checked},twitch:{...c.twitch,channel:$('#pfTwChannel').value,autoConnect:$('#pfTwAuto').checked},youtube:{...c.youtube,liveChatId:$('#pfYtId').value,pollMs:Number($('#pfYtPoll').value),autoConnect:$('#pfYtAuto').checked}}};S.config=await api.saveConfig(patch);if($('#pfYtKey').value)await api.youtubeSaveKey($('#pfYtKey').value);await refresh();renderPlatformsModule();toast('Plattformen gespeichert.')};
-  $$('[data-connect]').forEach(b=>b.onclick=async()=>{await $('#pfSave').onclick();const r=await api.connectAdapter(b.dataset.connect);if(!r.ok)toast(r.error,true);else toast(`${b.dataset.connect} verbunden.`);await refresh();renderPlatformsModule()});$$('[data-disconnect]').forEach(b=>b.onclick=async()=>{await api.disconnectAdapter(b.dataset.disconnect);await refresh();renderPlatformsModule()});
-  $('#pfObsConnect').onclick=async()=>{const r=await api.obsConnect({url:$('#pfObsUrl').value,password:$('#pfObsPass').value,autoConnect:$('#pfObsAuto').checked});if(!r.ok)toast(r.error,true);else toast('OBS verbunden.');await refresh();renderPlatformsModule()};$('#pfObsDisconnect').onclick=async()=>{await api.obsDisconnect();await refresh();renderPlatformsModule()};}
-
-function renderCommandsModule(){const list=S.config.commands||[];$('#commandsModule').innerHTML=section('Neuen Command anlegen',`<div class="form-grid three"><div><label>Command</label><input id="cmdTrigger" placeholder="!discord"></div><div><label>Antwort</label><input id="cmdReply" placeholder="Text oder {user}"></div><div><label>Cooldown Sekunden</label><input id="cmdCd" type="number" value="5"></div></div><div class="toolbar"><button class="primary" id="cmdAdd">Command hinzufügen</button></div>`)+section('Commands',`<div class="list-grid">${list.map((c,i)=>`<div class="list-row"><b>${esc(c.trigger)}</b><small>${esc(c.actions?.[0]?.text||'Aktion')}</small><button data-cmd-del="${i}">Löschen</button></div>`).join('')||'<small>Keine Commands.</small>'}</div>`);$('#cmdAdd').onclick=async()=>{const trigger=$('#cmdTrigger').value.trim(),text=$('#cmdReply').value.trim();if(!trigger||!text)return toast('Command und Antwort fehlen.',true);const next=[...list,{id:cryptoId(),trigger,cooldownSeconds:Number($('#cmdCd').value||0),enabled:true,actions:[{type:'tts',text}]}];S.config=await api.saveConfig({commands:next});renderCommandsModule();toast('Command gespeichert.')};$$('[data-cmd-del]').forEach(b=>b.onclick=async()=>{const next=list.filter((_,i)=>i!==Number(b.dataset.cmdDel));S.config=await api.saveConfig({commands:next});renderCommandsModule()})}
-function renderHotkeysModule(){const list=S.config.hotkeys||[];$('#hotkeysModule').innerHTML=section('Hotkey definieren',`<div class="form-grid three"><div><label>Name</label><input id="hkName" placeholder="Spiel-Aktion"></div><div><label>Prozess</label><input id="hkProcess" placeholder="game"></div><div><label>SendKeys</label><input id="hkKeys" placeholder="^+{F1}"></div></div><div class="toolbar"><button class="primary" id="hkAdd">Speichern</button></div><p>Hotkeys werden nur unter Windows ausgeführt und aktivieren den angegebenen Zielprozess vor dem Tastendruck.</p>`)+section('Hotkeys',`<div class="list-grid">${list.map((h,i)=>`<div class="list-row"><b>${esc(h.name)}</b><small>${esc(h.process)} · ${esc(h.keys)}</small><button data-hk-del="${i}">Löschen</button></div>`).join('')||'<small>Keine Hotkeys.</small>'}</div>`);$('#hkAdd').onclick=async()=>{const n={id:cryptoId(),name:$('#hkName').value,process:$('#hkProcess').value,keys:$('#hkKeys').value};S.config=await api.saveConfig({hotkeys:[...list,n]});renderHotkeysModule()};$$('[data-hk-del]').forEach(b=>b.onclick=async()=>{S.config=await api.saveConfig({hotkeys:list.filter((_,i)=>i!==Number(b.dataset.hkDel))});renderHotkeysModule()})}
-function renderEventsModule(){const list=S.config.events||[];$('#eventsModule').innerHTML=section('TikFinity Event',`<div class="form-grid three"><div><label>Event</label><select id="evType"><option>gift</option><option>follow</option><option>like</option><option>share</option><option>subscribe</option></select></div><div><label>Aktion</label><select id="evAction"><option value="tts">TTS</option><option value="overlay">Overlay</option></select></div><div><label>Text</label><input id="evText" value="Danke {nickname}!"></div></div><div class="toolbar"><button class="primary" id="evAdd">Event speichern</button><button id="evTestGift">Gift testen</button><button id="evTestFollow">Follow testen</button></div>`)+section('Event-Regeln',`<div class="list-grid">${list.map((e,i)=>`<div class="list-row"><b>${esc(e.event)}</b><small>${esc(e.actions?.[0]?.type||'')}</small><button data-ev-del="${i}">Löschen</button></div>`).join('')||'<small>Keine Regeln.</small>'}</div>`);$('#evAdd').onclick=async()=>{const action=$('#evAction').value==='tts'?{type:'tts',text:$('#evText').value}:{type:'overlay',eventType:$('#evType').value,text:$('#evText').value};S.config=await api.saveConfig({events:[...list,{id:cryptoId(),platform:'tiktok',event:$('#evType').value,enabled:true,actions:[action]}]});renderEventsModule()};$('#evTestGift').onclick=()=>api.testEvent('gift');$('#evTestFollow').onclick=()=>api.testEvent('follow');$$('[data-ev-del]').forEach(b=>b.onclick=async()=>{S.config=await api.saveConfig({events:list.filter((_,i)=>i!==Number(b.dataset.evDel))});renderEventsModule()})}
-function renderMediaModule(){const list=S.config.media||[];$('#mediaModule').innerHTML=section('Eigene Medien',`<div class="toolbar"><button class="primary" id="mediaAdd">Dateien hinzufügen</button></div><p>Unterstützt MP3, WAV, OGG, MP4, WebM, GIF, PNG und JPG.</p><div class="list-grid">${list.map(m=>`<div class="list-row"><b>${esc(m.name)}</b><small>${esc(m.type)}</small><span></span></div>`).join('')||'<small>Noch keine Medien.</small>'}</div>`);$('#mediaAdd').onclick=async()=>{const r=await api.importMedia();if(r.ok){S.config=r.config;renderMediaModule();toast(`${r.items.length} Medien importiert.`)}}}
-function renderPoolsModule(){const list=S.config.mediaPools||[];$('#poolsModule').innerHTML=section('Medien-Pools',`<div class="form-grid"><div><label>Name</label><input id="poolName" placeholder="Gift Sounds"></div><div><label>Modus</label><select id="poolMode"><option value="random">Zufällig</option><option value="sequence">Nacheinander</option></select></div></div><div class="toolbar"><button class="primary" id="poolAdd">Pool anlegen</button></div><div class="list-grid">${list.map((p,i)=>`<div class="list-row"><b>${esc(p.name)}</b><small>${esc(p.mode)} · ${(p.mediaIds||[]).length} Medien</small><button data-pool-del="${i}">Löschen</button></div>`).join('')||'<small>Keine Pools.</small>'}</div>`);$('#poolAdd').onclick=async()=>{S.config=await api.saveConfig({mediaPools:[...list,{id:cryptoId(),name:$('#poolName').value||'Pool',mode:$('#poolMode').value,mediaIds:[]}]});renderPoolsModule()};$$('[data-pool-del]').forEach(b=>b.onclick=async()=>{S.config=await api.saveConfig({mediaPools:list.filter((_,i)=>i!==Number(b.dataset.poolDel))});renderPoolsModule()})}
-function voices(){return speechSynthesis.getVoices()||[]}
-function renderTtsModule(){const t=S.config.tts||{};const vs=voices();$('#ttsModule').innerHTML=section('Text-to-Speech',`<label class="check"><input id="ttsEnabled" type="checkbox" ${t.enabled?'checked':''}> TTS aktiviert</label><div class="form-grid three"><div><label>Stimme</label><select id="ttsVoice"><option value="">Systemstandard</option>${vs.map(v=>`<option value="${esc(v.name)}">${esc(v.name)} (${esc(v.lang)})</option>`).join('')}</select></div><div><label>Geschwindigkeit</label><input id="ttsRate" type="number" min="0.5" max="2" step="0.1" value="${t.rate||1}"></div><div><label>Lautstärke</label><input id="ttsVol" type="number" min="0" max="1" step="0.1" value="${t.volume??1}"></div></div><div class="toolbar"><button class="primary" id="ttsSave">Speichern</button><button id="ttsTest">Test sprechen</button></div>`);$('#ttsVoice').value=t.voice||'';$('#ttsSave').onclick=async()=>{S.config=await api.saveConfig({tts:{...t,enabled:$('#ttsEnabled').checked,voice:$('#ttsVoice').value,rate:Number($('#ttsRate').value),volume:Number($('#ttsVol').value)}});toast('TTS gespeichert.')};$('#ttsTest').onclick=()=>speak({text:'CRAZY BATTO Multi Chat TTS Test',voice:$('#ttsVoice').value,rate:Number($('#ttsRate').value),volume:Number($('#ttsVol').value)})}
-function renderDiscordModule(){const d=S.config.discord||{};$('#discordModule').innerHTML=section('Discord Webhook',`<label class="check"><input id="dcEnabled" type="checkbox" ${d.enabled?'checked':''}> Discord aktiviert</label><div class="form-grid"><div><label>Webhook ${S.secrets.discordWebhook?'(gespeichert)':''}</label><input id="dcHook" type="password" placeholder="${S.secrets.discordWebhook?'nur zum Ändern eingeben':'https://discord.com/api/webhooks/...'}"></div><div><label>Standardtext</label><input id="dcText" value="${esc(d.messageTemplate||'CRAZY_BATTO ist live!')}"></div></div><div class="toolbar"><button class="primary" id="dcSave">Speichern</button><button id="dcTest">Test senden</button></div>`);$('#dcSave').onclick=async()=>{if($('#dcHook').value)await api.discordSaveWebhook($('#dcHook').value);S.config=await api.saveConfig({discord:{...d,enabled:$('#dcEnabled').checked,messageTemplate:$('#dcText').value}});await refresh();renderDiscordModule();toast('Discord gespeichert.')};$('#dcTest').onclick=async()=>{const r=await api.discordTest($('#dcText').value);toast(r.ok?'Discord Test gesendet.':r.error,!r.ok)}}
-function renderBackupModule(){api.listBackups().then(r=>{const list=r.backups||[];$('#backupModule').innerHTML=section('Sicherung',`<div class="toolbar"><button class="primary" id="bkNow">Backup jetzt</button><button id="bkExport">Config exportieren</button><button id="bkImport">Config importieren</button></div><div class="list-grid">${list.map(b=>`<div class="list-row"><b>${esc(b.name)}</b><small>${new Date(b.mtime).toLocaleString('de-DE')}</small><button data-bk-restore="${esc(b.path)}">Wiederherstellen</button></div>`).join('')||'<small>Noch keine Backups.</small>'}</div>`);$('#bkNow').onclick=async()=>{await api.backupNow();renderBackupModule();toast('Backup erstellt.')};$('#bkExport').onclick=()=>api.exportConfig();$('#bkImport').onclick=async()=>{const x=await api.importConfig();if(x.ok){await refresh();renderBackupModule();toast('Config importiert.')}};$$('[data-bk-restore]').forEach(b=>b.onclick=async()=>{if(!confirm('Backup wiederherstellen?'))return;await api.restoreBackup(b.dataset.bkRestore);await refresh();renderBackupModule()})})}
-function renderSettingsModule(){const g=S.config.general,h=S.config.http,a=S.config.appearance;$('#settingsModule').innerHTML=section('Allgemein',`<div class="form-grid"><div><label>Anzeigename</label><input id="stName" value="${esc(g.displayName)}"></div><div><label>UI-Skalierung</label><input id="stScale" type="number" min="0.8" max="1.4" step="0.05" value="${a.uiScale||1}"></div></div>`)+section('Overlay / HTTP',`<div class="form-grid three"><div><label>Host</label><input id="stHost" value="${esc(h.host)}"></div><div><label>Port</label><input id="stPort" type="number" value="${h.port}"></div><div><label>Heartbeat Sekunden</label><input id="stHeartbeat" type="number" value="${h.heartbeatSeconds||15}"></div></div><label class="check"><input id="stHttp" type="checkbox" ${h.enabled?'checked':''}> Overlay-Webserver aktiv</label>`)+`<div class="toolbar"><button class="primary" id="stSave">Speichern</button><button id="stOpen">Chat-Overlay öffnen</button></div>`;$('#stSave').onclick=async()=>{S.config=await api.saveConfig({general:{...g,displayName:$('#stName').value},appearance:{...a,uiScale:Number($('#stScale').value)},http:{...h,enabled:$('#stHttp').checked,host:$('#stHost').value,port:Number($('#stPort').value),heartbeatSeconds:Number($('#stHeartbeat').value)}});document.documentElement.style.fontSize=`${Math.round(16*(S.config.appearance.uiScale||1))}px`;await refresh();renderSettingsModule();toast('Einstellungen gespeichert.')};$('#stOpen').onclick=()=>api.openOverlay('/overlay/chat')}
-function cryptoId(){return`${Date.now().toString(36)}-${Math.random().toString(36).slice(2,9)}`}
-function copy(text){api.copyText(text);toast('In Zwischenablage kopiert.')}
-function speak(p={}){if(!('speechSynthesis'in window))return;const u=new SpeechSynthesisUtterance(String(p.text||''));const v=voices().find(x=>x.name===p.voice);if(v)u.voice=v;u.rate=Number(p.rate||1);u.pitch=Number(p.pitch||1);u.volume=Number(p.volume??1);speechSynthesis.speak(u)}
-
-async function refresh(){const f=await api.getState();S.config=f.config;S.messages=f.messages||[];S.logs=f.logs||[];S.moderation=f.moderation||{};S.history=f.moderationHistory||[];S.adapters=f.adapters||{};S.overlay=f.overlay;S.obs=f.obs||{};S.secrets=f.secrets||{};renderDashboard()}
-function bindStatic(){
-  $$('#mainNav [data-view]').forEach(b=>b.onclick=()=>setView(b.dataset.view));$$('[data-back-dashboard]').forEach(b=>b.onclick=()=>setView('dashboard'));$$('[data-open-view]').forEach(b=>b.onclick=()=>setView(b.dataset.openView));
-  $('#composer').onsubmit=async e=>{e.preventDefault();const text=$('#messageInput').value.trim();if(!text)return;const r=await api.sendMessage({platform:$('#sendPlatform').value,text});if(!r.ok)return toast(r.error,true);$('#messageInput').value=''};
-  $('#contextMenu').onclick=e=>{const a=e.target.closest('button')?.dataset.action;if(a)doModeration(S.contextUser,a,'')};document.addEventListener('click',e=>{if(!e.target.closest('#contextMenu'))$('#contextMenu').hidden=true});window.addEventListener('blur',()=>$('#contextMenu').hidden=true);
-  $('#historyPlatform').onchange=renderHistory;$('#previewHologram').onclick=()=>api.openOverlay('/overlay/chat');$('#importFontBtn').onclick=async()=>{const r=await api.importFont();if(r.ok){S.config=r.config;renderHologram();toast('Schrift geladen.')}};['#holoUserEnabled','#holoMessageEnabled','#holoFont','#holoUserColor','#holoMsgColor','#holoGlow','#holoOpacity'].forEach(id=>$(id).onchange=saveHologram);
-  $$('[data-co-format]').forEach(b=>b.onclick=async()=>{$$('[data-co-format]').forEach(x=>x.classList.toggle('active',x===b));await saveCohost()});$('#coPlaces').onchange=saveCohost;$('#coEnabled').onchange=saveCohost;$('#coSlotList').addEventListener('change',e=>{if(e.target.matches('[data-co-slot]'))saveCohost()});
-  $$('[data-copy]').forEach(b=>b.onclick=()=>copy(b.dataset.copy==='holo'?$('#holoUrl').textContent:b.dataset.copy==='coTik'?$('#coTikUrl').textContent:$('#coTwUrl').textContent));$('#detachBtn').onclick=()=>detached?api.closeDetached():api.detachChat();
-  setInterval(()=>{$('#clock').textContent=new Date().toLocaleString('de-DE',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit',year:'numeric'})},1000);
+function toast(message, error = false) {
+  const el = $('#toast');
+  el.textContent = message;
+  el.classList.toggle('error', error);
+  el.hidden = false;
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => { el.hidden = true; }, 4200);
 }
-function updateSystem(s){S.system=s;$('#cpuStat').textContent=`${s.cpu?.toFixed?.(0)??'–'}%`;$('#ramStat').textContent=`${s.ram?.toFixed?.(0)??'–'}%`;$('#cpuMeter').value=s.cpu||0;$('#ramMeter').value=s.ram||0;$('#uploadStat').textContent=s.uploadKbps==null?'–':`${Math.round(s.uploadKbps)} kbps`;$('#fpsStat').textContent=s.fps==null?'–':Number(s.fps).toFixed(0);$('#bitrateStat').textContent=s.bitrateKbps==null?'–':`${Math.round(s.bitrateKbps)} kbps`}
-async function boot(){await refresh();bindStatic();if(detached){$('#sidebar').style.display='none';document.querySelector('.shell').style.gridTemplateColumns='1fr';$$('.dashboard-grid>.card:not(.chat-card)').forEach(x=>x.style.display='none');$('.dashboard-grid').style.display='block';$('.chat-card').style.height='100%';$('#detachBtn').textContent='↙'}api.onChatMessage(m=>{S.messages.push(m);const max=S.config.multiChat.maxMessages||5000;if(S.messages.length>max)S.messages.splice(0,S.messages.length-max);renderChat()});api.onAdapterStatus(s=>{S.adapters[s.name]=s;renderConnections();if(S.view==='platforms')renderPlatformsModule()});api.onModerationEvent(async()=>{const f=await api.getState();S.moderation=f.moderation;S.history=f.moderationHistory;renderModeration();renderHistory();if(S.view==='moderation')renderModerationModule()});api.onFilterHit(h=>toast(`Chat-Filter: ${h.username} · ${h.term}`));api.onPlatformEvent(e=>{if(e.event==='gift'||e.event==='follow'||e.event==='subscribe')toast(`TikFinity ${e.event}: ${e.data?.nickname||e.data?.uniqueId||''}`)});api.onObsStatus(s=>{S.obs=s;renderConnections();if(S.view==='platforms')renderPlatformsModule()});api.onSystemStatus(updateSystem);api.onTtsSpeak(speak);speechSynthesis.onvoiceschanged=()=>{if(S.view==='tts')renderTtsModule()}}
-boot().catch(e=>{console.error(e);toast(`Startfehler: ${e.message}`,true)});
+
+function platformIcon(platform) {
+  return platform === 'tiktok' ? 'TT' : platform === 'twitch' ? 'TW' : platform === 'youtube' ? 'YT' : platform === 'cng' ? 'CNG' : '•';
+}
+
+function statusClass(status) {
+  return status?.connected ? 'ok' : status?.state === 'error' ? 'error' : '';
+}
+
+function setView(view) {
+  S.view = view;
+  $$('.view').forEach((panel) => panel.classList.toggle('active', panel.dataset.viewPanel === view));
+  $$('.nav-item').forEach((button) => button.classList.toggle('active', button.dataset.view === view));
+  if (view !== 'dashboard') renderModule(view);
+  document.dispatchEvent(new CustomEvent('batto:view',{detail:view}));
+}
+
+function overlayBase() {
+  const host = S.overlay?.host || S.config?.http?.host || '127.0.0.1';
+  const port = S.overlay?.port || S.config?.http?.port || 17777;
+  return `http://${host}:${port}`;
+}
+
+function section(title, html) {
+  return `<section class="panel-section"><h3>${title}</h3>${html}</section>`;
+}
+
+function copy(text) {
+  api.copyText(text);
+  toast('In Zwischenablage kopiert.');
+}
+
+function cryptoId() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+async function loadProgramBackground() {
+    document.documentElement.style.setProperty('--program-background', "url('../assets/marble.jpg')");
+  }
+
+function applyAppearance() {
+  const appearance = S.config?.appearance || {};
+  document.documentElement.style.fontSize = `${Math.round(16 * Number(appearance.uiScale || 1))}px`;
+  document.documentElement.style.setProperty('--background-darkness', String(Math.max(0, Math.min(.8, Number(appearance.backgroundDarkness ?? .28)))));
+  const bg = $('.bg-watermark');
+  if (bg) bg.style.display = appearance.programBackground === false ? 'none' : 'block';
+}
+
+async function saveAndSync(patch, message = '') {
+  S.config = await api.saveConfig(patch);
+  applyAppearance();
+  if (S.config?.sync?.enabled) await refresh(false);
+  if (message) toast(message);
+  if (S.view !== 'dashboard') renderModule(S.view);
+}
+
+function counts(platform) {
+  return platform === 'all' ? S.messages.length : S.messages.filter((message) => message.platform === platform).length;
+}
+
+function renderChat() {
+  const tabs = [['all', 'Alle'], ['tiktok', 'TikTok'], ['twitch', 'Twitch'], ['cng', 'CNG'], ['youtube', 'YouTube']];
+  $('#chatTabs').innerHTML = tabs.map(([id, label]) => `<button class="${S.chatTab === id ? 'active' : ''}" data-chat-tab="${id}">${label} (${counts(id)})</button>`).join('');
+  $$('[data-chat-tab]').forEach((button) => {
+    button.onclick = () => { S.chatTab = button.dataset.chatTab; renderChat(); };
+  });
+
+  const rows = S.chatTab === 'all' ? S.messages : S.messages.filter((message) => message.platform === S.chatTab);
+  $('#chatList').innerHTML = rows.length
+    ? rows.slice(-250).map((message) => `<div class="chat-row"><span class="chat-time">${time(message.timestamp)}</span><span class="platform-icon ${message.platform}">${platformIcon(message.platform)}</span><span class="chat-user ${message.platform}" data-user="${esc(message.username)}" data-platform="${esc(message.platform)}">${esc(message.displayName || message.username)}</span><span class="chat-text">${esc(message.message)}</span></div>`).join('')
+    : `<div class="empty"><div><b>Noch keine Nachrichten</b><br><small>TikFinity, AxelChat, Twitch oder YouTube verbinden.</small></div></div>`;
+
+  $$('.chat-user').forEach((el) => {
+    el.oncontextmenu = (event) => {
+      event.preventDefault();
+      S.contextUser = { username: el.dataset.user, platform: el.dataset.platform };
+      const menu = $('#contextMenu');
+      menu.hidden = false;
+      menu.style.left = `${Math.min(event.clientX, innerWidth - 245)}px`;
+      menu.style.top = `${Math.min(event.clientY, innerHeight - 270)}px`;
+    };
+  });
+  if (S.config?.multiChat?.autoScroll) $('#chatList').scrollTop = $('#chatList').scrollHeight;
+}
+
+function stateFor(platform) {
+  return S.moderation?.[platform] || { moderators: [], muted: [], blocked: [] };
+}
+
+function modEntries(title, list, kind) {
+  return `<div class="mod-box"><div class="mod-title"><span>${title} (${list.length})</span><span>＋</span></div><div class="mod-list">${list.length ? list.map((entry) => `<div class="mod-entry"><div><b>${esc(entry.username)}</b>${entry.reason ? `<small><br>Grund: ${esc(entry.reason)}</small>` : ''}</div><button data-mod-inline="${kind}" data-user="${esc(entry.username)}">⋮</button></div>`).join('') : '<small style="color:var(--muted)">Keine Einträge</small>'}</div></div>`;
+}
+
+function actionLabel(action) {
+  return ({ addModerator: 'Moderator +', removeModerator: 'Moderator −', mute: 'Stummgeschaltet', unmute: 'Entstummt', block: 'Blockiert', unblock: 'Entblockt' })[action] || action;
+}
+
+async function doModeration(user, action, reason = '') {
+  if (!user) return;
+  if ((action === 'mute' || action === 'block') && !reason) {
+    reason = prompt(action === 'mute' ? 'Grund für Stummschaltung:' : 'Grund für Blockierung:', '') || '';
+  }
+  const result = await api.moderate({ ...user, action, reason, resultMode: 'local' });
+  $('#contextMenu').hidden = true;
+  if (!result.ok) return toast(result.error || 'Moderation fehlgeschlagen', true);
+  await refresh(false);
+  renderModeration();
+  renderHistory();
+  toast(`${user.username}: ${actionLabel(action)}`);
+}
+
+function renderModeration() {
+  const tabs = ['tiktok', 'twitch', 'cng', 'youtube'];
+  $('#modTabs').innerHTML = tabs.map((platform) => `<button data-mod-tab="${platform}" class="${S.modTab === platform ? 'active' : ''}">${platform[0].toUpperCase() + platform.slice(1)}</button>`).join('');
+  $$('[data-mod-tab]').forEach((button) => {
+    button.onclick = () => { S.modTab = button.dataset.modTab; renderModeration(); };
+  });
+  const state = stateFor(S.modTab);
+  $('#modColumns').innerHTML = modEntries('Moderatoren', state.moderators || [], 'removeModerator') + modEntries('Stummgeschaltet', state.muted || [], 'unmute') + modEntries('Blockiert', state.blocked || [], 'unblock');
+  $$('[data-mod-inline]').forEach((button) => { button.onclick = () => doModeration({ username: button.dataset.user, platform: S.modTab }, button.dataset.modInline, ''); });
+}
+
+function renderHistory() {
+  const filter = $('#historyPlatform')?.value || 'all';
+  const rows = S.history.filter((entry) => filter === 'all' || entry.platform === filter).slice(-100).reverse();
+  const body = $('#historyBody');
+  if (!body) return;
+  body.innerHTML = rows.length
+    ? rows.map((entry) => `<tr><td>${time(entry.timestamp)}</td><td>${esc(entry.username)}</td><td>${esc(actionLabel(entry.action))}</td><td>${esc(entry.reason || '–')}</td><td title="${esc(entry.lastMessage || '')}">${esc(entry.lastMessage || '–')}</td><td>${esc(entry.executor || '–')}</td><td>${esc(entry.platform)}</td><td class="result-ok">${esc(entry.result || 'Lokal')}</td></tr>`).join('')
+    : `<tr><td colspan="8" style="text-align:center;color:var(--muted)">Noch kein Moderationsverlauf.</td></tr>`;
+}
+
+function renderHologram() {
+  const design = S.config.chatDesign || {};
+  $('#holoUserEnabled').checked = design.usernameEnabled !== false;
+  $('#holoMessageEnabled').checked = design.messageEnabled !== false;
+  $('#holoFont').value = ['Segoe UI', 'Arial', 'Impact', 'Verdana', 'BattoCustom'].includes(design.fontFamily) ? design.fontFamily : 'Segoe UI';
+  $('#holoUserColor').value = design.usernameColor || '#00d4ff';
+  $('#holoMsgColor').value = design.messageColor || '#ffffff';
+  $('#holoGlow').value = Number(design.glow || 10);
+  $('#holoOpacity').value = Math.round(Number(design.opacity ?? .92) * 100);
+  $('#holoUrl').textContent = `${overlayBase()}/overlay/chat`;
+}
+
+async function saveHologram() {
+  const old = S.config.chatDesign || {};
+  await saveAndSync({ chatDesign: { ...old, usernameEnabled: $('#holoUserEnabled').checked, messageEnabled: $('#holoMessageEnabled').checked, fontFamily: $('#holoFont').value, usernameColor: $('#holoUserColor').value, messageColor: $('#holoMsgColor').value, glow: Number($('#holoGlow').value), opacity: Number($('#holoOpacity').value) / 100 } }, 'Hologramm gespeichert.');
+  renderHologram();
+}
+
+function renderCohost() {
+  const cohost = S.config.cohost || {};
+  const places = Math.max(1, Math.min(9, Number(cohost.places || 4)));
+  $('#coEnabled').checked = cohost.enabled !== false;
+  $('#coPlaces').value = String(places);
+  $$('[data-co-format]').forEach((button) => button.classList.toggle('active', button.dataset.coFormat === (cohost.format || 'tiktok')));
+  const slots = [...(cohost.slots || [])];
+  while (slots.length < places) slots.push({ label: `Gast ${slots.length + 1}`, source: '' });
+  $('#coSlotList').innerHTML = slots.slice(0, places).map((slot, index) => `<div class="slot-row"><span>Platz ${index + 1}</span><input data-co-slot="${index}" value="${esc(slot.source || slot.label || '')}" placeholder="Quelle / Gast / Browser-URL"></div>`).join('');
+  $('#coPreview').style.gridTemplateColumns = places <= 1 ? '1fr' : places <= 4 ? 'repeat(2,1fr)' : 'repeat(3,1fr)';
+  $('#coPreview').innerHTML = slots.slice(0, places).map((slot, index) => `<div class="guest-preview"><div><b>${esc(slot.label || `Gast ${index + 1}`)}</b><br>${slot.source ? '<span>Quelle gesetzt</span>' : '<span>keine Quelle</span>'}</div></div>`).join('');
+  $('#coTikUrl').textContent = `${overlayBase()}/cohost/tiktok`;
+  $('#coTwUrl').textContent = `${overlayBase()}/cohost/twitch`;
+}
+
+async function saveCohost() {
+  const old = S.config.cohost || {};
+  const places = Number($('#coPlaces').value || 4);
+  const format = $('[data-co-format].active')?.dataset.coFormat || 'tiktok';
+  const slots = [];
+  for (let i = 0; i < places; i++) {
+    const value = $(`[data-co-slot="${i}"]`)?.value?.trim() || '';
+    slots.push({ label: value && !/^https?:\/\//i.test(value) ? value : `Gast ${i + 1}`, source: /^https?:\/\//i.test(value) ? value : '' });
+  }
+  await saveAndSync({ cohost: { ...old, enabled: $('#coEnabled').checked, places, format, slots } });
+  renderCohost();
+}
+
+function connItem(icon, name, sub, status) {
+  const cls = status?.connected ? 'ok' : status?.state === 'error' ? 'error' : '';
+  const text = status?.connected ? 'Verbunden' : status?.state || 'Nicht verbunden';
+  return `<div class="connection-item"><span class="ico">${icon}</span><div><strong>${name}</strong><small>${sub}</small></div><span class="conn-state ${cls}">${esc(text)}</span></div>`;
+}
+
+function renderConnections() {
+  const adapters = S.adapters || {};
+  $('#connectionList').innerHTML =
+    connItem('TF', 'TikFinity Local Bridge', 'ohne Euler/API · lokal', adapters.tikfinity) +
+    connItem('AX', 'AxelChat WebSocket', 'lokale Chat-Bridge', adapters.axelchat) +
+    connItem('TW', 'Twitch Direkt-Chat', 'Nur-Lesen ohne Tokenfeld', adapters.twitch) +
+    connItem('YT', 'YouTube Live-Chat', 'Data API', adapters.youtube) +
+    connItem('CNG', 'CNG Overlays', S.secrets.cngObsChatUrl ? 'OBS-Chat-URL sicher gespeichert' : 'Ghost/Alert konfiguriert', { connected: true, state: 'overlay-ready' });
+  $('#obsChip').className = `chip ${S.obs?.connected ? 'ok' : S.obs?.state === 'error' ? 'error' : ''}`;
+  $('#overlayChip').className = `chip ${S.overlay?.running ? 'ok' : 'error'}`;
+  $('#overlayChip').innerHTML = `<i></i>Overlay ${S.overlay?.port || S.config?.http?.port || 8787}`;
+  $('#tikfinityChip').className = `chip ${adapters.tikfinity?.connected ? 'ok' : adapters.tikfinity?.state === 'error' ? 'error' : ''}`;
+}
+
+function renderDashboard() {
+  renderChat();
+  renderModeration();
+  renderHistory();
+  renderHologram();
+  renderCohost();
+  renderConnections();
+}
+
+function renderModule(view) {
+  if (view === 'moderation') renderModerationModule();
+  if (view === 'filters') renderFiltersModule();
+  if (view === 'hologram') renderHoloModule();
+  if (view === 'cohost') renderCohostModule();
+  if (view === 'platforms') renderPlatformsModule();
+  if (view === 'commands') renderCommandsModule();
+  if (view === 'broadcast') renderBroadcastModule();
+  if (view === 'hotkeys') renderHotkeysModule();
+  if (view === 'events') renderEventsModule();
+  if (view === 'media') renderMediaModule();
+  if (view === 'pools') renderPoolsModule();
+  if (view === 'tts') void renderTtsModule();
+  if (view === 'discord') renderDiscordModule();
+  if (view === 'backups') renderBackupModule();
+  if (view === 'settings') renderSettingsModule();
+}
+
+function renderModerationModule() {
+  const el = $('#moderationModule');
+  const tabs = ['tiktok', 'twitch', 'cng', 'youtube'];
+  el.innerHTML = `<div class="tabs">${tabs.map((platform) => `<button data-mm-tab="${platform}" class="${S.modTab === platform ? 'active' : ''}">${platform}</button>`).join('')}</div><div id="mmLists" class="mod-columns"></div>${section('Moderationsverlauf', '<div class="table-scroll"><table><thead><tr><th>Zeit</th><th>Name</th><th>Aktion</th><th>Grund</th><th>Letzte Nachricht</th><th>Durch</th><th>Plattform</th><th>Ergebnis</th></tr></thead><tbody id="mmHistory"></tbody></table></div>')}`;
+  const state = stateFor(S.modTab);
+  $('#mmLists').innerHTML = modEntries('Moderatoren', state.moderators || [], 'removeModerator') + modEntries('Stummgeschaltet', state.muted || [], 'unmute') + modEntries('Blockiert', state.blocked || [], 'unblock');
+  $('#mmHistory').innerHTML = S.history.slice().reverse().map((entry) => `<tr><td>${time(entry.timestamp)}</td><td>${esc(entry.username)}</td><td>${esc(actionLabel(entry.action))}</td><td>${esc(entry.reason || '–')}</td><td>${esc(entry.lastMessage || '–')}</td><td>${esc(entry.executor || '–')}</td><td>${esc(entry.platform)}</td><td class="result-ok">${esc(entry.result)}</td></tr>`).join('') || '<tr><td colspan="8">Noch kein Verlauf.</td></tr>';
+  $$('[data-mm-tab]').forEach((button) => { button.onclick = () => { S.modTab = button.dataset.mmTab; renderModerationModule(); }; });
+  $$('[data-mod-inline]').forEach((button) => { button.onclick = () => doModeration({ username: button.dataset.user, platform: S.modTab }, button.dataset.modInline, ''); });
+}
+
+function renderFiltersModule() {
+  const cfg = S.config.filters;
+  $('#filtersModule').innerHTML = section('Neuen Filter anlegen', `<div class="form-grid three"><div><label>Begriff</label><input id="fTerm"></div><div><label>Plattform</label><select id="fPlatform"><option value="all">Alle</option><option>tiktok</option><option>twitch</option><option>cng</option><option>youtube</option></select></div><div><label>Aktion</label><select id="fAction"><option value="hide">Ausblenden</option><option value="mark">Markieren</option><option value="mute">Stummschalten</option><option value="block">Blockieren</option></select></div></div><div class="toolbar"><button class="primary" id="fAdd">Hinzufügen</button></div>`) + section('Aktive Filter', `<div class="list-grid">${(cfg.rules || []).map((rule) => `<div class="list-row"><b>${esc(rule.term)}</b><small>${esc(rule.platform)} · ${esc(rule.action)}</small><button data-filter-del="${rule.id}">Löschen</button></div>`).join('') || '<small>Keine Filter.</small>'}</div>`);
+  $('#fAdd').onclick = async () => {
+    const result = await api.addFilter({ term: $('#fTerm').value, platform: $('#fPlatform').value, action: $('#fAction').value });
+    if (!result.ok) return toast(result.error, true);
+    await refresh(false); renderFiltersModule(); toast('Filter hinzugefügt.');
+  };
+  $$('[data-filter-del]').forEach((button) => { button.onclick = async () => { await api.removeFilter(button.dataset.filterDel); await refresh(false); renderFiltersModule(); }; });
+}
+
+function renderHoloModule() {
+  const d = S.config.chatDesign;
+  $('#holoModule').innerHTML = section('Hologramm-Design', `<div class="form-grid three"><div><label>Schriftart</label><select id="mhFont"><option>Segoe UI</option><option>Arial</option><option>Impact</option><option>Verdana</option><option>BattoCustom</option></select></div><div><label>Benutzerfarbe</label><input id="mhUser" type="color" value="${d.usernameColor}"></div><div><label>Nachrichtenfarbe</label><input id="mhMsg" type="color" value="${d.messageColor}"></div><div><label>Schriftgröße</label><input id="mhSize" type="number" min="10" max="80" value="${d.fontSize}"></div><div><label>Glow</label><input id="mhGlow" type="number" min="0" max="60" value="${d.glow}"></div><div><label>Anzeigedauer</label><input id="mhSec" type="number" min="2" max="120" value="${d.displaySeconds}"></div></div><div class="toolbar"><button id="mhImportFont">Eigene Schrift laden</button><button class="primary" id="mhSave">Speichern</button><button id="mhPreview">Overlay öffnen</button></div>`) + section('OBS-Browserquelle', `<div class="url-row"><span>Chat</span><code>${overlayBase()}/overlay/chat</code><button id="mhCopy">URL kopieren</button></div>`);
+  $('#mhFont').value = d.fontFamily || 'Segoe UI';
+  $('#mhImportFont').onclick = async () => { const result = await api.importFont(); if (result.ok) { S.config = result.config; renderHoloModule(); toast('Schrift importiert.'); } };
+  $('#mhSave').onclick = () => saveAndSync({ chatDesign: { ...d, fontFamily: $('#mhFont').value, usernameColor: $('#mhUser').value, messageColor: $('#mhMsg').value, fontSize: Number($('#mhSize').value), glow: Number($('#mhGlow').value), displaySeconds: Number($('#mhSec').value) } }, 'Hologramm gespeichert.');
+  $('#mhPreview').onclick = () => api.openOverlay('/overlay/chat');
+  $('#mhCopy').onclick = () => copy(`${overlayBase()}/overlay/chat`);
+}
+
+function renderCohostModule() {
+  const c = S.config.cohost;
+  const places = Number(c.places || 4);
+  $('#cohostModule').innerHTML = section('Format & Plätze', `<div class="form-grid"><div><label>Format</label><select id="mcFormat"><option value="tiktok">TikTok 1080 × 1920</option><option value="twitch">Twitch 1920 × 1080</option></select></div><div><label>Plätze</label><select id="mcPlaces">${[1, 2, 3, 4, 6, 9].map((n) => `<option ${n === places ? 'selected' : ''}>${n}</option>`).join('')}</select></div></div>`) + section('Plätze / Quellen', '<div id="mcSlots" class="list-grid"></div>') + section('OBS-Ausgabe', `<div class="url-row"><span>TikTok</span><code>${overlayBase()}/cohost/tiktok</code><button data-copy-url="${overlayBase()}/cohost/tiktok">Kopieren</button></div><div class="url-row"><span>Twitch</span><code>${overlayBase()}/cohost/twitch</code><button data-copy-url="${overlayBase()}/cohost/twitch">Kopieren</button></div><div class="toolbar"><button class="primary" id="mcSave">Speichern</button><button id="mcTik">TikTok Vorschau</button><button id="mcTw">Twitch Vorschau</button></div>`);
+  $('#mcFormat').value = c.format || 'tiktok';
+  const slots = [...(c.slots || [])];
+  while (slots.length < places) slots.push({ label: `Gast ${slots.length + 1}`, source: '' });
+  $('#mcSlots').innerHTML = slots.slice(0, places).map((slot, index) => `<div class="form-grid"><div><label>Platz ${index + 1} Name</label><input data-mc-label="${index}" value="${esc(slot.label || `Gast ${index + 1}`)}"></div><div><label>Quelle / Browser-URL</label><input data-mc-src="${index}" value="${esc(slot.source || '')}"></div></div>`).join('');
+  $('#mcPlaces').onchange = async () => { await saveAndSync({ cohost: { ...c, places: Number($('#mcPlaces').value) } }); renderCohostModule(); };
+  $('#mcSave').onclick = async () => {
+    const count = Number($('#mcPlaces').value);
+    const arr = [];
+    for (let i = 0; i < count; i++) arr.push({ label: $(`[data-mc-label="${i}"]`)?.value || `Gast ${i + 1}`, source: $(`[data-mc-src="${i}"]`)?.value || '' });
+    await saveAndSync({ cohost: { ...c, format: $('#mcFormat').value, places: count, slots: arr } }, 'Co-Host gespeichert.');
+    renderCohost();
+  };
+  $('#mcTik').onclick = () => api.openOverlay('/cohost/tiktok');
+  $('#mcTw').onclick = () => api.openOverlay('/cohost/twitch');
+  $$('[data-copy-url]').forEach((button) => { button.onclick = () => copy(button.dataset.copyUrl); });
+}
+
+function adapterCard(name, title, desc, fields = '') {
+  const status = S.adapters[name] || {};
+  return section(title, `<p>${desc}</p>${fields}<div class="toolbar"><button class="primary" data-connect="${name}">${status.connected ? 'Verbunden' : 'Verbinden'}</button><button data-disconnect="${name}">Trennen</button><span class="conn-state ${statusClass(status)}">${esc(status.error || status.state || 'idle')}</span></div>`);
+}
+
+function renderPlatformsModule() {
+  const c = S.config.platforms;
+  const cng = c.cng || {};
+  $('#platformsModule').innerHTML =
+    adapterCard('tikfinity', 'TikFinity Local Bridge', 'Lokale Event-/Chat-Bridge ohne Euler-Pflicht. TikFinity Desktop muss auf demselben PC laufen.', `<div class="form-grid"><div><label>WebSocket</label><input id="pfTikUrl" value="${esc(c.tikfinity.url)}"></div><div><label>Reconnect Sekunden</label><input id="pfTikRec" type="number" value="${c.tikfinity.reconnectSeconds}"></div></div><label class="check"><input id="pfTikAuto" type="checkbox" ${c.tikfinity.autoConnect ? 'checked' : ''}> Automatisch verbinden</label>`) +
+    adapterCard('axelchat', 'AxelChat WebSocket', 'Zusätzliche lokale Chat-Bridge.', `<div class="form-grid"><div><label>WebSocket</label><input id="pfAxUrl" value="${esc(c.axelchat.url)}"></div><div><label>Reconnect Sekunden</label><input id="pfAxRec" type="number" value="${c.axelchat.reconnectSeconds}"></div></div><label class="check"><input id="pfAxAuto" type="checkbox" ${c.axelchat.autoConnect ? 'checked' : ''}> Automatisch verbinden</label>`) +
+    adapterCard('twitch', 'Twitch Direkt-Chat', 'Öffentlichen Chat direkt lesen. Kein Tokenfeld; Senden/Plattformmoderation bleiben im Nur-Lesen-Modus deaktiviert.', `<div><label>Channel / Twitch-URL / Dashboard-URL</label><input id="pfTwChannel" value="${esc(c.twitch.channel)}"></div><label class="check"><input id="pfTwAuto" type="checkbox" ${c.twitch.autoConnect ? 'checked' : ''}> Automatisch verbinden</label>`) +
+    adapterCard('youtube', 'YouTube Live-Chat', 'Live Chat ID + eigener API Key. Key wird verschlüsselt gespeichert.', `<div class="form-grid"><div><label>Live Chat ID</label><input id="pfYtId" value="${esc(c.youtube.liveChatId)}"></div><div><label>API Key ${S.secrets.youtubeApiKey ? '(gespeichert)' : ''}</label><input id="pfYtKey" type="password" placeholder="${S.secrets.youtubeApiKey ? 'nur zum Ändern eingeben' : 'API Key'}"></div><div><label>Polling ms</label><input id="pfYtPoll" type="number" value="${c.youtube.pollMs}"></div></div><label class="check"><input id="pfYtAuto" type="checkbox" ${c.youtube.autoConnect ? 'checked' : ''}> Automatisch verbinden</label>`) +
+    section('CNG Overlays & Chat', `<div class="success-note">CNG stellt öffentliche Guides für Alerts sowie OBS-/Ghost-Chat-Overlays bereit. Tokenisierte OBS-Chat-URLs werden in dieser App ausschließlich lokal verschlüsselt gespeichert.</div><div class="form-grid three" style="margin-top:10px"><div><label>Creator ID</label><input id="cngCreator" value="${esc(cng.creatorId || '')}"></div><div><label>Alert-Overlay URL</label><input id="cngAlert" value="${esc(cng.alertOverlayUrl || '')}"></div><div><label>Ghost-Chat URL</label><input id="cngGhost" value="${esc(cng.ghostChatUrl || '')}"></div></div><div><label>OBS-Chat URL mit obsChatToken ${S.secrets.cngObsChatUrl ? '(verschlüsselt gespeichert)' : ''}</label><input id="cngChatSecret" type="password" placeholder="${S.secrets.cngObsChatUrl ? 'nur zum Ändern eingeben' : 'CNG OBS-Chat URL hier lokal speichern'}"></div><label class="check"><input id="cngLocalBroadcast" type="checkbox" ${cng.localBroadcastEnabled !== false ? 'checked' : ''}> CNG Auto-Broadcast im lokalen Multi-Chat/Overlay erlauben</label><div class="toolbar"><button class="primary" id="cngSave">CNG speichern</button><button id="cngCopyAlert">Alert URL kopieren</button><button id="cngCopyGhost">Ghost URL kopieren</button><button id="cngCopyChat">Gespeicherte OBS-Chat URL kopieren</button><button id="cngOpenAlert">Alert öffnen</button><button id="cngOpenGhost">Ghost öffnen</button><button id="cngClearChat" class="danger">OBS-Chat URL löschen</button></div><div class="warning-note">Die von dir verwendete obsChatToken-URL wird absichtlich nicht in das öffentliche GitHub-Repository geschrieben.</div>`) +
+    section('OBS WebSocket 4455', `<div class="form-grid"><div><label>Adresse</label><input id="pfObsUrl" value="${esc(S.config.obs.url)}"></div><div><label>Passwort ${S.secrets.obsPassword ? '(gespeichert)' : ''}</label><input id="pfObsPass" type="password" placeholder="${S.secrets.obsPassword ? 'nur zum Ändern' : 'optional'}"></div></div><label class="check"><input id="pfObsAuto" type="checkbox" ${S.config.obs.autoConnect ? 'checked' : ''}> Automatisch verbinden</label><div class="toolbar"><button class="primary" id="pfObsConnect">Speichern & verbinden</button><button id="pfObsDisconnect">Trennen</button><span class="conn-state ${S.obs.connected ? 'ok' : S.obs.state === 'error' ? 'error' : ''}">${esc(S.obs.error || S.obs.state || 'idle')}</span></div>`) +
+    `<div class="toolbar"><button class="primary" id="pfSave">Plattform-Einstellungen speichern</button></div>`;
+
+  $('#pfSave').onclick = async () => { const youtubeKey = $('#pfYtKey').value;
+    const patch = { platforms: { ...c, tikfinity: { ...c.tikfinity, url: $('#pfTikUrl').value, reconnectSeconds: Number($('#pfTikRec').value), autoConnect: $('#pfTikAuto').checked }, axelchat: { ...c.axelchat, url: $('#pfAxUrl').value, reconnectSeconds: Number($('#pfAxRec').value), autoConnect: $('#pfAxAuto').checked }, twitch: { ...c.twitch, channel: $('#pfTwChannel').value, autoConnect: $('#pfTwAuto').checked }, youtube: { ...c.youtube, liveChatId: $('#pfYtId').value, pollMs: Number($('#pfYtPoll').value), autoConnect: $('#pfYtAuto').checked } } };
+    await saveAndSync(patch);
+    if (youtubeKey) await api.youtubeSaveKey(youtubeKey);
+    await refresh(false); renderPlatformsModule(); toast('Plattformen gespeichert.');
+  };
+
+  $$('[data-connect]').forEach((button) => { button.onclick = async () => { await $('#pfSave').onclick(); const result = await api.connectAdapter(button.dataset.connect); if (!result.ok) toast(result.error, true); else toast(`${button.dataset.connect} verbunden.`); await refresh(false); renderPlatformsModule(); }; });
+  $$('[data-disconnect]').forEach((button) => { button.onclick = async () => { await api.disconnectAdapter(button.dataset.disconnect); await refresh(false); renderPlatformsModule(); }; });
+
+  $('#pfObsConnect').onclick = async () => { const result = await api.obsConnect({ url: $('#pfObsUrl').value, password: $('#pfObsPass').value, autoConnect: $('#pfObsAuto').checked }); if (!result.ok) toast(result.error, true); else toast('OBS verbunden.'); await refresh(false); renderPlatformsModule(); };
+  $('#pfObsDisconnect').onclick = async () => { await api.obsDisconnect(); await refresh(false); renderPlatformsModule(); };
+
+  $('#cngSave').onclick = async () => { const cngChatUrl = $('#cngChatSecret').value;
+    const creatorId = $('#cngCreator').value.trim();
+    const nextCng = { ...cng, creatorId, alertOverlayUrl: $('#cngAlert').value.trim() || `https://cng-plattform.com/alert-overlay?creatorId=${encodeURIComponent(creatorId)}&alertTts=1&chatTts=0`, ghostChatUrl: $('#cngGhost').value.trim() || `https://cng-plattform.com/chat-popout/${encodeURIComponent(creatorId)}?mode=ghost`, localBroadcastEnabled: $('#cngLocalBroadcast').checked };
+    await saveAndSync({ platforms: { ...S.config.platforms, cng: nextCng } });
+    if (cngChatUrl) {
+      const secretResult = await api.cngSaveChatUrl(cngChatUrl);
+      if (!secretResult.ok) return toast(secretResult.error, true);
+    }
+    await refresh(false); renderPlatformsModule(); toast('CNG Einstellungen gespeichert.');
+  };
+  $('#cngCopyAlert').onclick = async () => { const r = await api.cngCopyUrl('alert'); toast(r.ok ? 'CNG Alert URL kopiert.' : r.error, !r.ok); };
+  $('#cngCopyGhost').onclick = async () => { const r = await api.cngCopyUrl('ghost'); toast(r.ok ? 'CNG Ghost URL kopiert.' : r.error, !r.ok); };
+  $('#cngCopyChat').onclick = async () => { const r = await api.cngCopyUrl('chat'); toast(r.ok ? 'CNG OBS-Chat URL kopiert.' : r.error, !r.ok); };
+  $('#cngOpenAlert').onclick = () => api.cngOpenUrl('alert');
+  $('#cngOpenGhost').onclick = () => api.cngOpenUrl('ghost');
+  $('#cngClearChat').onclick = async () => { await api.cngClearChatUrl(); await refresh(false); renderPlatformsModule(); toast('CNG OBS-Chat URL gelöscht.'); };
+}
+
+function actionSummary(action) {
+  const type = action.type || 'unknown';
+  if (type === 'tts') return `TTS: ${action.text || ''}`;
+  if (type === 'overlay') return `Overlay ${action.eventType || 'custom'}: ${action.text || ''}`;
+  if (type === 'mediaPool') return `Medien-Pool: ${(S.config.mediaPools || []).find((p) => p.id === action.poolId)?.name || action.poolId}`;
+  if (type === 'media') return `Medium: ${(S.config.media || []).find((m) => m.id === action.mediaId)?.name || action.mediaId}`;
+  if (type === 'hotkey') return `Hotkey ${action.process}: ${action.keys}`;
+  if (type === 'discord') return `Discord: ${action.text || ''}`;
+  if (type === 'chat') return `Chat ${action.platform || 'same'}: ${action.text || ''}`;
+  if (type === 'delay') return `Pause ${action.ms || 0} ms`;
+  return type;
+}
+
+function actionBuilderHtml(prefix, actions) {
+  const mediaOptions = (S.config.media || []).map((m) => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
+  const poolOptions = (S.config.mediaPools || []).map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  return `<div class="action-builder"><div class="form-grid four"><div><label>Aktion</label><select id="${prefix}Type"><option value="tts">TTS</option><option value="mediaPool">Medien-Pool</option><option value="media">Medium</option><option value="overlay">Overlay</option><option value="hotkey">Hotkey</option><option value="discord">Discord</option><option value="chat">Chat-Antwort</option><option value="delay">Pause</option></select></div><div><label>Text / Overlay-Text</label><input id="${prefix}Text" placeholder="Danke {user}! / {nickname}"></div><div><label>Zielplattform</label><select id="${prefix}TargetPlatform"><option value="same">Gleiche Plattform</option><option value="local">Lokal</option><option value="cng">CNG</option><option value="twitch">Twitch</option><option value="tiktok">TikTok</option><option value="youtube">YouTube</option></select></div><div><label>Overlay Event</label><input id="${prefix}EventType" value="custom"></div><div><label>Medien-Pool</label><select id="${prefix}Pool"><option value="">–</option>${poolOptions}</select></div><div><label>Medium</label><select id="${prefix}Media"><option value="">–</option>${mediaOptions}</select></div><div><label>Zielprozess</label><input id="${prefix}Process" placeholder="game"></div><div><label>Hotkey / Pause ms</label><input id="${prefix}Value" placeholder="^+{F1} oder 1000"></div></div><div class="toolbar"><button id="${prefix}AddAction">Aktion hinzufügen</button></div><div class="action-list">${actions.map((action, index) => `<div class="action-chip"><div><b>${esc(action.type)}</b><br><small>${esc(actionSummary(action))}</small></div><button data-${prefix.toLowerCase()}-action-del="${index}">Entfernen</button></div>`).join('') || '<small>Noch keine Aktion.</small>'}</div></div>`;
+}
+
+function readAction(prefix) {
+  const type = $(`#${prefix}Type`).value;
+  if (type === 'tts') return { type, text: $(`#${prefix}Text`).value };
+  if (type === 'overlay') return { type, eventType: $(`#${prefix}EventType`).value || 'custom', text: $(`#${prefix}Text`).value };
+  if (type === 'mediaPool') return { type, poolId: $(`#${prefix}Pool`).value };
+  if (type === 'media') return { type, mediaId: $(`#${prefix}Media`).value };
+  if (type === 'hotkey') return { type, process: $(`#${prefix}Process`).value, keys: $(`#${prefix}Value`).value };
+  if (type === 'discord') return { type, text: $(`#${prefix}Text`).value };
+  if (type === 'chat') return { type, platform: $(`#${prefix}TargetPlatform`).value, text: $(`#${prefix}Text`).value };
+  if (type === 'delay') return { type, ms: Math.max(0, Number($(`#${prefix}Value`).value || 0)) };
+  return { type };
+}
+
+function rerenderActionForm(prefix, render) {
+    const ids = prefix === 'cmd' ? ['cmdTrigger','cmdPlatform','cmdCd','cmdEnabled','cmdTimeout','cmdFailure','cmdLiveOnly'] : ['evPlatform','evEventType','evMatch','evMin','evEnabled','evTimeout','evFailure','evLiveOnly','evCooldown'];
+    const draft = ids.map(id => { const el = document.getElementById(id); return [id, el.value, el.checked]; });
+    render();
+    for (const [id, value, checked] of draft) { const el = document.getElementById(id); el.value = value; if (el.type === 'checkbox') el.checked = checked; }
+  }
+  function renderCommandsModule() {
+  const list = S.config.commands || [];
+  const editing = S.commandEdit == null ? null : list[S.commandEdit];
+  
+  $('#commandsModule').innerHTML = section(editing ? 'Command bearbeiten' : 'Neuen Command anlegen', `<div class="form-grid three"><div><label>Command</label><input id="cmdTrigger" value="${esc(editing?.trigger || '')}" placeholder="!discord"></div><div><label>Plattform</label><select id="cmdPlatform"><option value="all">Alle Plattformen</option><option value="tiktok">TikTok</option><option value="twitch">Twitch</option><option value="cng">CNG</option><option value="youtube">YouTube</option><option value="local">Lokal</option></select></div><div><label>Cooldown Sekunden</label><input id="cmdCd" type="number" min="0" value="${editing?.cooldownSeconds ?? 5}"></div></div><label class="check"><input id="cmdEnabled" type="checkbox" ${editing?.enabled === false ? '' : 'checked'}> Aktiviert</label>${actionBuilderHtml('cmd', S.commandDraft)}<div class="toolbar"><button class="primary" id="cmdSave">${editing ? 'Änderungen speichern' : 'Command speichern'}</button><button id="cmdCancel">Entwurf leeren</button></div>`) + section('Commands', `<div class="list-grid">${list.map((cmd, index) => `<div class="list-row"><b>${esc(cmd.trigger)} <small>[${esc(cmd.platform || 'all')}]</small></b><small>${(cmd.actions || []).map(actionSummary).map(esc).join(' · ') || 'Keine Aktion'}</small><div><button data-cmd-edit="${index}">Bearbeiten</button> <button data-cmd-del="${index}">Löschen</button></div></div>`).join('') || '<small>Keine Commands.</small>'}</div>`);
+  $('#cmdPlatform').value = editing?.platform || 'all';
+  $('#cmdAddAction').onclick = () => { const action = readAction('cmd'); if ((action.type === 'mediaPool' && !action.poolId) || (action.type === 'media' && !action.mediaId)) return toast('Bitte Medium oder Medien-Pool auswählen.', true); S.commandDraft.push(action); rerenderActionForm('cmd', renderCommandsModule); };
+  $$('[data-cmd-action-del]').forEach((button) => { button.onclick = () => { S.commandDraft.splice(Number(button.dataset.cmdActionDel), 1); rerenderActionForm('cmd', renderCommandsModule); }; });
+  $('#cmdSave').onclick = async () => {
+    const trigger = $('#cmdTrigger').value.trim();
+    if (!trigger || !S.commandDraft.length) return toast('Command und mindestens eine Aktion werden benötigt.', true);
+    const item = { id: editing?.id || cryptoId(), trigger, platform: $('#cmdPlatform').value, cooldownSeconds: Number($('#cmdCd').value || 0), enabled: $('#cmdEnabled').checked, timeoutMs:Number($('#cmdTimeout').value),failurePolicy:$('#cmdFailure').value,onlyWhenLive:$('#cmdLiveOnly').checked, actions: structuredClone(S.commandDraft) };
+    const next = [...list];
+    if (S.commandEdit == null) next.push(item); else next[S.commandEdit] = item;
+    await saveAndSync({ commands: next }, 'Command gespeichert.');
+    S.commandDraft = []; S.commandEdit = null; renderCommandsModule();
+  };
+  $('#cmdCancel').onclick = () => { S.commandDraft = []; S.commandEdit = null; renderCommandsModule(); };
+  $$('[data-cmd-edit]').forEach((button) => { button.onclick = () => { S.commandEdit = Number(button.dataset.cmdEdit); S.commandDraft = structuredClone(list[S.commandEdit].actions || []); renderCommandsModule(); }; });
+  $$('[data-cmd-del]').forEach((button) => { button.onclick = async () => { const next = list.filter((_item, index) => index !== Number(button.dataset.cmdDel)); await saveAndSync({ commands: next }); S.commandEdit = null; S.commandDraft = []; renderCommandsModule(); }; });
+}
+
+function renderBroadcastModule() {
+  window.BattoBroadcast.render({el:$('#broadcastModule'),config:S.config,api,toast});
+}
+
+function renderHotkeysModule() {
+  const list = S.config.hotkeys || [];
+  $('#hotkeysModule').innerHTML = section('Hotkey definieren', `<div class="form-grid three"><div><label>Name</label><input id="hkName" placeholder="Spiel-Aktion"></div><div><label>Prozess</label><input id="hkProcess" placeholder="game"></div><div><label>SendKeys</label><input id="hkKeys" placeholder="^+{F1}"></div></div><div class="toolbar"><button class="primary" id="hkAdd">Speichern</button></div><p>Der Zielprozess wird vor dem Tastendruck aktiviert.</p>`) + section('Hotkeys', `<div class="list-grid">${list.map((hotkey, index) => `<div class="list-row"><b>${esc(hotkey.name)}</b><small>${esc(hotkey.process)} · ${esc(hotkey.keys)}</small><button data-hk-del="${index}">Löschen</button></div>`).join('') || '<small>Keine Hotkeys.</small>'}</div>`);
+  $('#hkAdd').onclick = async () => { const item = { id: cryptoId(), name: $('#hkName').value, process: $('#hkProcess').value, keys: $('#hkKeys').value }; await saveAndSync({ hotkeys: [...list, item] }, 'Hotkey gespeichert.'); renderHotkeysModule(); };
+  $$('[data-hk-del]').forEach((button) => { button.onclick = async () => { await saveAndSync({ hotkeys: list.filter((_item, index) => index !== Number(button.dataset.hkDel)) }); renderHotkeysModule(); }; });
+}
+
+function renderEventsModule() {
+  const list = S.config.events || [];
+  const editing = S.eventEdit == null ? null : list[S.eventEdit];
+  
+  $('#eventsModule').innerHTML = section(editing ? 'Event bearbeiten' : 'Neue Event-Regel', `<div class="form-grid four"><div><label>Plattform</label><select id="evPlatform"><option value="all">Alle</option><option value="tiktok">TikTok</option><option value="twitch">Twitch</option><option value="cng">CNG</option><option value="youtube">YouTube</option></select></div><div><label>Event</label><select id="evEventType"><option>gift</option><option>follow</option><option>like</option><option>share</option><option>subscribe</option><option>raid</option><option>stream_start</option><option>stream_end</option><option>chat</option><option>custom</option></select></div><div><label>Filter Text / Giftname optional</label><input id="evMatch" value="${esc(editing?.matchText || '')}"></div><div><label>Mindestwert optional</label><input id="evMin" type="number" min="0" value="${editing?.minValue || 0}"></div></div><label class="check"><input id="evEnabled" type="checkbox" ${editing?.enabled === false ? '' : 'checked'}> Aktiviert</label>${actionBuilderHtml('ev', S.eventDraft)}<div class="toolbar"><button class="primary" id="evSave">${editing ? 'Änderungen speichern' : 'Event speichern'}</button><button id="evCancel">Entwurf leeren</button><button id="evTestGift">Gift testen</button><button id="evTestFollow">Follow testen</button></div>`) + section('Event-Regeln', `<div class="list-grid">${list.map((rule, index) => `<div class="list-row"><b>${esc(rule.platform || 'all')} · ${esc(rule.event)}</b><small>${(rule.actions || []).map(actionSummary).map(esc).join(' · ')}</small><div><button data-ev-edit="${index}">Bearbeiten</button> <button data-ev-del="${index}">Löschen</button></div></div>`).join('') || '<small>Keine Regeln.</small>'}</div>`);
+  $('#evPlatform').value = editing?.platform || 'tiktok';
+  $('#evEventType').value = editing?.event || 'gift';
+  $('#evAddAction').onclick = () => { const action = readAction('ev'); if ((action.type === 'mediaPool' && !action.poolId) || (action.type === 'media' && !action.mediaId)) return toast('Bitte Medium oder Medien-Pool auswählen.', true); S.eventDraft.push(action); rerenderActionForm('ev', renderEventsModule); };
+  $$('[data-ev-action-del]').forEach((button) => { button.onclick = () => { S.eventDraft.splice(Number(button.dataset.evActionDel), 1); rerenderActionForm('ev', renderEventsModule); }; });
+  $('#evSave').onclick = async () => {
+    if (!S.eventDraft.length) return toast('Mindestens eine Aktion ist erforderlich.', true);
+    const item = { id: editing?.id || cryptoId(), platform: $('#evPlatform').value, event: $('#evEventType').value, matchText: $('#evMatch').value.trim(), minValue: Number($('#evMin').value || 0), enabled: $('#evEnabled').checked, timeoutMs:Number($('#evTimeout').value),failurePolicy:$('#evFailure').value,onlyWhenLive:$('#evLiveOnly').checked,cooldownSeconds:Number($('#evCooldown').value), actions: structuredClone(S.eventDraft) };
+    const next = [...list];
+    if (S.eventEdit == null) next.push(item); else next[S.eventEdit] = item;
+    await saveAndSync({ events: next }, 'Event-Regel gespeichert.');
+    S.eventDraft = []; S.eventEdit = null; renderEventsModule();
+  };
+  $('#evCancel').onclick = () => { S.eventDraft = []; S.eventEdit = null; renderEventsModule(); };
+  $('#evTestGift').onclick = () => api.testEvent('gift');
+  $('#evTestFollow').onclick = () => api.testEvent('follow');
+  $$('[data-ev-edit]').forEach((button) => { button.onclick = () => { S.eventEdit = Number(button.dataset.evEdit); S.eventDraft = structuredClone(list[S.eventEdit].actions || []); renderEventsModule(); }; });
+  $$('[data-ev-del]').forEach((button) => { button.onclick = async () => { await saveAndSync({ events: list.filter((_item, index) => index !== Number(button.dataset.evDel)) }); S.eventEdit = null; S.eventDraft = []; renderEventsModule(); }; });
+}
+
+function renderMediaModule() {
+  const list = S.config.media || [];
+  $('#mediaModule').innerHTML = section('Eigene Medien', `<div class="toolbar"><button class="primary" id="mediaAdd">Dateien hinzufügen</button><button id="mediaOverlay">Medien-Overlay öffnen</button></div><p>Unterstützt MP3, WAV, OGG, MP4, WebM, GIF, PNG und JPG.</p><div class="list-grid">${list.map((media) => `<div class="list-row"><b>${esc(media.name)}</b><small>${esc(media.type)}</small><div><button data-media-test="${media.id}">Test</button> <button data-media-del="${media.id}">Löschen</button></div></div>`).join('') || '<small>Noch keine Medien.</small>'}</div>`);
+  $('#mediaAdd').onclick = async () => { const result = await api.importMedia(); if (result.ok) { S.config = result.config; renderMediaModule(); toast(`${result.items.length} Medien importiert.`); } };
+  $('#mediaOverlay').onclick = () => api.openOverlay('/overlay/media');
+  $$('[data-media-test]').forEach((button) => { button.onclick = async () => { await api.testAutomationAction({ type: 'media', mediaId: button.dataset.mediaTest }); toast('Medium an Overlay gesendet.'); }; });
+  $$('[data-media-del]').forEach((button) => { button.onclick = async () => { if (!confirm('Medium wirklich löschen?')) return; const result = await api.removeMedia(button.dataset.mediaDel); if (result.ok) { S.config = result.config; renderMediaModule(); } }; });
+}
+
+function renderPoolsModule() {
+  const pools = S.config.mediaPools || [];
+  const editing = S.poolEdit == null ? null : pools[S.poolEdit];
+  const selected = new Set(editing?.mediaIds || []);
+  $('#poolsModule').innerHTML = section(editing ? 'Medien-Pool bearbeiten' : 'Medien-Pool anlegen', `<div class="form-grid four"><div><label>Name</label><input id="poolName" value="${esc(editing?.name || '')}" placeholder="Gift Sounds"></div><div><label>Modus</label><select id="poolMode"><option value="random">Zufällig</option><option value="sequence">Nacheinander</option></select></div><div><label>Lautstärke</label><div class="range-row"><input id="poolVolume" type="range" min="0" max="100" value="${Math.round(Number(editing?.volume ?? 1) * 100)}"><span id="poolVolumeLabel">${Math.round(Number(editing?.volume ?? 1) * 100)}%</span></div></div><div><label>Max. Anzeige Sekunden (0 = Medienlänge)</label><input id="poolDuration" type="number" min="0" max="300" value="${editing?.durationSeconds || 0}"></div></div><label class="check"><input id="poolAvoid" type="checkbox" ${editing?.avoidRepeat === false ? '' : 'checked'}> Direkte Wiederholung vermeiden</label><div><label>Medien im Pool</label><div class="media-picker">${(S.config.media || []).map((media) => `<label class="media-check"><input type="checkbox" data-pool-media="${media.id}" ${selected.has(media.id) ? 'checked' : ''}> ${esc(media.name)}</label>`).join('') || '<small>Zuerst Medien importieren.</small>'}</div></div><div class="toolbar"><button class="primary" id="poolSave">${editing ? 'Änderungen speichern' : 'Pool anlegen'}</button><button id="poolCancel">Abbrechen</button>${editing ? '<button id="poolTest">Pool testen</button>' : ''}</div>`) + section('Medien-Pools', `<div class="list-grid">${pools.map((pool, index) => `<div class="list-row"><b>${esc(pool.name)}</b><small>${esc(pool.mode)} · ${(pool.mediaIds || []).length} Medien · ${Math.round(Number(pool.volume ?? 1) * 100)}%</small><div><button data-pool-edit="${index}">Bearbeiten</button> <button data-pool-test="${pool.id}">Test</button> <button data-pool-del="${index}">Löschen</button></div></div>`).join('') || '<small>Keine Pools.</small>'}</div>`);
+  $('#poolMode').value = editing?.mode || 'random';
+  $('#poolVolume').oninput = () => { $('#poolVolumeLabel').textContent = `${$('#poolVolume').value}%`; };
+  $('#poolSave').onclick = async () => {
+    const mediaIds = $$('[data-pool-media]:checked').map((input) => input.dataset.poolMedia);
+    if (!$('#poolName').value.trim() || !mediaIds.length) return toast('Poolname und mindestens ein Medium werden benötigt.', true);
+    const item = { id: editing?.id || cryptoId(), name: $('#poolName').value.trim(), mode: $('#poolMode').value, mediaIds, volume: Number($('#poolVolume').value) / 100, durationSeconds: Number($('#poolDuration').value || 0), avoidRepeat: $('#poolAvoid').checked };
+    const next = [...pools];
+    if (S.poolEdit == null) next.push(item); else next[S.poolEdit] = item;
+    await saveAndSync({ mediaPools: next }, 'Medien-Pool gespeichert und synchronisiert.');
+    S.poolEdit = null; renderPoolsModule();
+  };
+  $('#poolCancel').onclick = () => { S.poolEdit = null; renderPoolsModule(); };
+  $('#poolTest')?.addEventListener('click', () => api.testAutomationAction({ type: 'mediaPool', poolId: editing.id }));
+  $$('[data-pool-edit]').forEach((button) => { button.onclick = () => { S.poolEdit = Number(button.dataset.poolEdit); renderPoolsModule(); }; });
+  $$('[data-pool-test]').forEach((button) => { button.onclick = () => api.testAutomationAction({ type: 'mediaPool', poolId: button.dataset.poolTest }); });
+  $$('[data-pool-del]').forEach((button) => { button.onclick = async () => { await saveAndSync({ mediaPools: pools.filter((_item, index) => index !== Number(button.dataset.poolDel)) }); S.poolEdit = null; renderPoolsModule(); }; });
+}
+
+async function loadAudioOutputs() {
+  try {
+    if (!navigator.mediaDevices?.enumerateDevices) return [];
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices.filter((device) => device.kind === 'audiooutput').map((device, index) => ({ id: device.deviceId, label: device.label || `Audio-Ausgang ${index + 1}` }));
+  } catch {
+    return [];
+  }
+}
+
+let ttsQueue=[],ttsRunning=false;
+async function playTts(payload = {}) {
+  const limit=Math.max(1,Number(S.config?.tts?.queueLimit || 100));
+  if(ttsQueue.length>=limit){toast('TTS-Warteschlange ist voll.',true);return;}
+  ttsQueue.push(payload);if(ttsRunning)return;ttsRunning=true;
+  try{while(ttsQueue.length){try{await playTtsOnce(ttsQueue.shift());}catch(e){toast(e.message,true);}}}finally{ttsRunning=false;}
+}
+async function playTtsOnce(payload = {}) {
+  const cfg = S.config?.tts || {};
+  const result = await api.ttsSynthesize({ text: payload.text, voice: payload.voice || cfg.voice, rate: payload.rate ?? cfg.rate });
+  if (!result.ok) {
+    if ((!payload.outputDeviceId || payload.outputDeviceId==='default') && (!cfg.outputDeviceId || cfg.outputDeviceId==='default') && 'speechSynthesis' in window) {
+      const utterance = new SpeechSynthesisUtterance(String(payload.text || ''));
+      utterance.rate = Number(payload.rate ?? cfg.rate ?? 1);
+      utterance.volume = Number(payload.volume ?? cfg.volume ?? 1);
+      await new Promise(resolve=>{utterance.onend=resolve;utterance.onerror=resolve;speechSynthesis.speak(utterance);});
+      return;
+    }
+    return toast(result.error || 'TTS fehlgeschlagen.', true);
+  }
+  const audio = new Audio(result.url);
+  audio.volume = Math.max(0, Math.min(1, Number(payload.volume ?? cfg.volume ?? 1)));
+  const sink = payload.outputDeviceId || cfg.outputDeviceId;
+  if (sink && sink !== 'default' && typeof audio.setSinkId === 'function') {
+    try { await audio.setSinkId(sink); } catch (error) { await api.ttsCleanup(result.path);toast(`TTS-Ausgabegerät konnte nicht gesetzt werden: ${error.message}`, true);return; }
+  }
+  const cleanup = () => api.ttsCleanup(result.path);
+  await new Promise(resolve=>{
+    let done=false;const timer=setTimeout(()=>finish(),120000);
+    function finish(){if(done)return;done=true;clearTimeout(timer);audio.pause();cleanup();resolve();}
+    audio.onended=finish;audio.onerror=finish;
+    audio.play().catch(error=>{toast(`TTS Wiedergabe: ${error.message}`,true);finish();});
+  });
+}
+
+async function renderTtsModule() {
+  const t = S.config.tts || {};
+  const voiceResult = await api.ttsListVoices();
+  if (voiceResult.ok) S.ttsVoices = voiceResult.voices || [];
+  S.audioOutputs = await loadAudioOutputs();
+  const outputOptions = [`<option value="default">Systemstandard</option>`, ...S.audioOutputs.map((device) => `<option value="${esc(device.id)}">${esc(device.label)}</option>`)].join('');
+  const voiceOptions = [`<option value="">Systemstandard</option>`, ...S.ttsVoices.map((voice) => `<option value="${esc(voice.name)}">${esc(voice.name)} (${esc(voice.culture || '')})</option>`)].join('');
+  $('#ttsModule').innerHTML = section('Text-to-Speech', `<label class="check"><input id="ttsEnabled" type="checkbox" ${t.enabled ? 'checked' : ''}> TTS aktiviert</label><label class="check"><input id="ttsReadChat" type="checkbox" ${t.readChat ? 'checked' : ''}> Chat automatisch vorlesen</label><div class="form-grid three"><div><label>Stimme</label><select id="ttsVoice">${voiceOptions}</select></div><div><label>Ausgabegerät</label><select id="ttsOutput">${outputOptions}</select></div><div><label>Geschwindigkeit</label><input id="ttsRate" type="number" min="0.5" max="2" step="0.1" value="${t.rate || 1}"></div></div><div><label>Lautstärke</label><div class="range-row"><input id="ttsVol" type="range" min="0" max="100" value="${Math.round(Number(t.volume ?? 1) * 100)}"><span id="ttsVolLabel">${Math.round(Number(t.volume ?? 1) * 100)}%</span></div></div><div><label>Plattformen vorlesen</label><div class="media-picker">${['twitch', 'tiktok', 'cng', 'youtube'].map((platform) => `<label class="media-check"><input type="checkbox" data-tts-platform="${platform}" ${(t.platforms || []).includes(platform) ? 'checked' : ''}> ${platform.toUpperCase()}</label>`).join('')}</div></div><label class="check"><input id="ttsStripUrls" type="checkbox" ${t.stripUrls !== false ? 'checked' : ''}> Links beim Vorlesen vereinfachen</label><div class="toolbar"><button class="primary" id="ttsSave">Speichern & synchronisieren</button><button id="ttsDetect">Geräte neu erkennen</button><button id="ttsChoose">Ausgabegerät auswählen</button><button id="ttsTest">Test sprechen</button></div><div class="success-note">Das ausgewählte Ausgabegerät wird über Chromium Audio Output Routing (setSinkId) verwendet. Die Sprachausgabe wird unter Windows zuerst als WAV erzeugt und danach gezielt auf das gewählte Gerät ausgegeben.</div>`);
+  $('#ttsVoice').value = t.voice || '';
+  if(t.outputDeviceId && ![...$('#ttsOutput').options].some(o=>o.value===t.outputDeviceId))$('#ttsOutput').add(new Option((t.outputDeviceLabel || t.outputDeviceId)+' (nicht verbunden)',t.outputDeviceId));
+  $('#ttsOutput').value=t.outputDeviceId || 'default';
+  $('#ttsVol').oninput = () => { $('#ttsVolLabel').textContent = `${$('#ttsVol').value}%`; };
+  $('#ttsSave').onclick = async () => {
+    const selectedOutput = $('#ttsOutput');
+    const platforms = $$('[data-tts-platform]:checked').map((x) => x.dataset.ttsPlatform);
+    await saveAndSync({ tts: { ...t, enabled: $('#ttsEnabled').checked, readChat: $('#ttsReadChat').checked, voice: $('#ttsVoice').value, rate: Number($('#ttsRate').value), volume: Number($('#ttsVol').value) / 100, outputDeviceId: selectedOutput.value, outputDeviceLabel: selectedOutput.selectedOptions[0]?.textContent || 'Systemstandard', platforms, stripUrls: $('#ttsStripUrls').checked } }, 'TTS gespeichert und synchronisiert.');
+    await renderTtsModule();
+  };
+  $('#ttsDetect').onclick = () => renderTtsModule();
+  $('#ttsChoose').onclick = async () => {
+    if (!navigator.mediaDevices?.selectAudioOutput) {
+      toast('Die direkte Windows-Auswahl ist in dieser Electron-Version nicht verfügbar. Nutze die erkannten Ausgabegeräte.', true);
+      return;
+    }
+    try {
+      const device = await navigator.mediaDevices.selectAudioOutput();
+      if (!device?.deviceId) return;
+      const select = $('#ttsOutput');
+      if (![...select.options].some((option) => option.value === device.deviceId)) {
+        const option = document.createElement('option');
+        option.value = device.deviceId;
+        option.textContent = device.label || 'Ausgewähltes Audiogerät';
+        select.append(option);
+      }
+      select.value = device.deviceId;
+      toast(`TTS-Ausgabe gewählt: ${device.label || 'Audiogerät'}`);
+    } catch (error) {
+      if (error.name !== 'NotAllowedError') toast(`Audiogerät: ${error.message}`, true);
+    }
+  };
+  $('#ttsTest').onclick = () => playTts({ text: 'CRAZY BATTO Multi Chat TTS Test', voice: $('#ttsVoice').value, rate: Number($('#ttsRate').value), volume: Number($('#ttsVol').value) / 100, outputDeviceId: $('#ttsOutput').value });
+}
+
+function renderDiscordModule() {
+  const d = S.config.discord || {};
+  $('#discordModule').innerHTML = section('Discord Webhook', `<label class="check"><input id="dcEnabled" type="checkbox" ${d.enabled ? 'checked' : ''}> Discord aktiviert</label><div class="form-grid"><div><label>Webhook ${S.secrets.discordWebhook ? '(gespeichert)' : ''}</label><input id="dcHook" type="password" placeholder="${S.secrets.discordWebhook ? 'nur zum Ändern eingeben' : 'https://discord.com/api/webhooks/...'}"></div><div><label>Standardtext</label><input id="dcText" value="${esc(d.messageTemplate || 'CRAZY_BATTO ist live!')}"></div></div><div class="toolbar"><button class="primary" id="dcSave">Speichern</button><button id="dcTest">Test senden</button></div>`);
+  $('#dcSave').onclick = async () => { if ($('#dcHook').value) await api.discordSaveWebhook($('#dcHook').value); await saveAndSync({ discord: { ...d, enabled: $('#dcEnabled').checked, messageTemplate: $('#dcText').value } }, 'Discord gespeichert.'); await refresh(false); renderDiscordModule(); };
+  $('#dcTest').onclick = async () => { const result = await api.discordTest($('#dcText').value); toast(result.ok ? 'Discord Test gesendet.' : result.error, !result.ok); };
+}
+
+function renderBackupModule() {
+  api.listBackups().then((result) => {
+    const list = result.backups || [];
+    $('#backupModule').innerHTML = section('Sicherung', `<div class="toolbar"><button class="primary" id="bkNow">Backup jetzt</button><button id="bkExport">Config exportieren</button><button id="bkImport">Config importieren</button></div><div class="list-grid">${list.map((backup) => `<div class="list-row"><b>${esc(backup.name)}</b><small>${new Date(backup.mtime).toLocaleString('de-DE')}</small><button data-bk-restore="${esc(backup.path)}">Wiederherstellen</button></div>`).join('') || '<small>Noch keine Backups.</small>'}</div>`);
+    $('#bkNow').onclick = async () => { await api.backupNow(); renderBackupModule(); toast('Backup erstellt.'); };
+    $('#bkExport').onclick = () => api.exportConfig();
+    $('#bkImport').onclick = async () => { const imported = await api.importConfig(); if (imported.ok) { await refresh(false); renderBackupModule(); toast('Config importiert.'); } };
+    $$('[data-bk-restore]').forEach((button) => { button.onclick = async () => { if (!confirm('Backup wiederherstellen?')) return; await api.restoreBackup(button.dataset.bkRestore); await refresh(false); renderBackupModule(); }; });
+  });
+}
+
+function renderSettingsModule() {
+  const g = S.config.general;
+  const h = S.config.http;
+  const a = S.config.appearance;
+  const sync = S.config.sync || { modules: {} };
+  const modules = ['platforms', 'commands', 'autoBroadcast', 'events', 'mediaPools', 'tts', 'cng', 'cohost', 'overlays'];
+  $('#settingsModule').innerHTML = section('Allgemein', `<div class="form-grid"><div><label>Anzeigename</label><input id="stName" value="${esc(g.displayName)}"></div><div><label>UI-Skalierung</label><input id="stScale" type="number" min="0.8" max="1.4" step="0.05" value="${a.uiScale || 1}"></div></div><label class="check"><input id="stBackground" type="checkbox" ${a.programBackground === false ? '' : 'checked'}> Programm-Hintergrund verwenden</label><div><label>Hintergrund-Abdunklung</label><div class="range-row"><input id="stDarkness" type="range" min="0" max="70" value="${Math.round(Number(a.backgroundDarkness ?? .28) * 100)}"><span id="stDarknessLabel">${Math.round(Number(a.backgroundDarkness ?? .28) * 100)}%</span></div></div>`) + section('Overlay / HTTP', `<div class="form-grid three"><div><label>Host</label><input id="stHost" value="${esc(h.host)}"></div><div><label>Port</label><input id="stPort" type="number" value="${h.port}"></div><div><label>Heartbeat Sekunden</label><input id="stHeartbeat" type="number" value="${h.heartbeatSeconds || 15}"></div></div><label class="check"><input id="stHttp" type="checkbox" ${h.enabled ? 'checked' : ''}> Overlay-Webserver aktiv</label>`) + section('Automatische Synchronisation / Zusatz-Einstellungen', `<label class="check"><input id="stSync" type="checkbox" ${sync.enabled !== false ? 'checked' : ''}> Änderungen sofort an laufende Module synchronisieren</label><div class="media-picker">${modules.map((module) => `<label class="media-check"><input type="checkbox" data-sync-module="${module}" ${sync.modules?.[module] === false ? '' : 'checked'}> ${esc(module)}</label>`).join('')}</div><p>Bei aktivierter Synchronisation werden gespeicherte Änderungen sofort in Dashboard, Overlays, Bridges, TTS, Commands, Events, Medien-Pools und Auto-Broadcast übernommen.</p>`) + section('Info', `<div class="info-card"><strong>Sarah Luna</strong><p>Ich danke Dir Für alles Sarah Luna Ich hab Dich Lieb Dein Bruder Crazy_Batto</p></div>`) + `<div class="toolbar"><button class="primary" id="stSave">Alles speichern & synchronisieren</button><button id="stOpen">Chat-Overlay öffnen</button></div>`;
+  $('#stDarkness').oninput = () => { $('#stDarknessLabel').textContent = `${$('#stDarkness').value}%`; document.documentElement.style.setProperty('--background-darkness', String(Number($('#stDarkness').value) / 100)); };
+  $('#stSave').onclick = async () => {
+    const moduleSync = {};
+    $$('[data-sync-module]').forEach((input) => { moduleSync[input.dataset.syncModule] = input.checked; });
+    await saveAndSync({ general: { ...g, displayName: $('#stName').value }, appearance: { ...a, uiScale: Number($('#stScale').value), programBackground: $('#stBackground').checked, backgroundDarkness: Number($('#stDarkness').value) / 100 }, http: { ...h, enabled: $('#stHttp').checked, host: $('#stHost').value, port: Number($('#stPort').value), heartbeatSeconds: Number($('#stHeartbeat').value) }, sync: { ...sync, enabled: $('#stSync').checked, modules: moduleSync } }, 'Alle Einstellungen gespeichert und synchronisiert.');
+    renderSettingsModule();
+  };
+  $('#stOpen').onclick = () => api.openOverlay('/overlay/chat');
+}
+
+async function refresh(render = true) {
+  const state = await api.getState();
+  S.config = state.config;
+  S.messages = state.messages || [];
+  S.logs = state.logs || [];
+  S.moderation = state.moderation || {};
+  S.history = state.moderationHistory || [];
+  S.adapters = state.adapters || {};
+  S.overlay = state.overlay;
+  S.obs = state.obs || {};
+  S.secrets = state.secrets || {};
+  applyAppearance();
+  if (render) renderDashboard();
+}
+
+function bindStatic() {
+  $$('#mainNav [data-view]').forEach((button) => { button.onclick = () => setView(button.dataset.view); });
+  $$('[data-back-dashboard]').forEach((button) => { button.onclick = () => setView('dashboard'); });
+  $$('[data-open-view]').forEach((button) => { button.onclick = () => setView(button.dataset.openView); });
+
+  $('#composer').onsubmit = async (event) => {
+    event.preventDefault();
+    const text = $('#messageInput').value.trim();
+    if (!text) return;
+    const result = await api.sendMessage({ platform: $('#sendPlatform').value, text });
+    if (!result.ok) return toast(result.error, true);
+    $('#messageInput').value = '';
+  };
+
+  $('#contextMenu').onclick = (event) => {
+    const action = event.target.closest('button')?.dataset.action;
+    if (action) doModeration(S.contextUser, action, '');
+  };
+  document.addEventListener('click', (event) => { if (!event.target.closest('#contextMenu')) $('#contextMenu').hidden = true; });
+  window.addEventListener('blur', () => { $('#contextMenu').hidden = true; });
+
+  $('#historyPlatform').onchange = renderHistory;
+  $('#previewHologram').onclick = () => api.openOverlay('/overlay/chat');
+  $('#importFontBtn').onclick = async () => { const result = await api.importFont(); if (result.ok) { S.config = result.config; renderHologram(); toast('Schrift geladen.'); } };
+  ['#holoUserEnabled', '#holoMessageEnabled', '#holoFont', '#holoUserColor', '#holoMsgColor', '#holoGlow', '#holoOpacity'].forEach((id) => { $(id).onchange = saveHologram; });
+
+  $$('[data-co-format]').forEach((button) => { button.onclick = async () => { $$('[data-co-format]').forEach((x) => x.classList.toggle('active', x === button)); await saveCohost(); }; });
+  $('#coPlaces').onchange = saveCohost;
+  $('#coEnabled').onchange = saveCohost;
+  $('#coSlotList').addEventListener('change', (event) => { if (event.target.matches('[data-co-slot]')) saveCohost(); });
+
+  $$('[data-copy]').forEach((button) => { button.onclick = () => copy(button.dataset.copy === 'holo' ? $('#holoUrl').textContent : button.dataset.copy === 'coTik' ? $('#coTikUrl').textContent : $('#coTwUrl').textContent); });
+  $('#detachBtn').onclick = () => detached ? api.closeDetached() : api.detachChat();
+  setInterval(() => { $('#clock').textContent = new Date().toLocaleString('de-DE', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }); }, 1000);
+}
+
+function updateSystem(status) {
+  S.system = status;
+  $('#cpuStat').textContent = `${status.cpu?.toFixed?.(0) ?? '–'}%`;
+  $('#ramStat').textContent = `${status.ram?.toFixed?.(0) ?? '–'}%`;
+  $('#cpuMeter').value = status.cpu || 0;
+  $('#ramMeter').value = status.ram || 0;
+  $('#uploadStat').textContent = status.uploadKbps == null ? '–' : `${Math.round(status.uploadKbps)} kbps`;
+  $('#fpsStat').textContent = status.fps == null ? '–' : Number(status.fps).toFixed(0);
+  $('#bitrateStat').textContent = status.bitrateKbps == null ? '–' : `${Math.round(status.bitrateKbps)} kbps`;
+}
+
+async function boot() {
+  await loadProgramBackground();
+  await refresh();
+  bindStatic();
+  document.body.classList.toggle('detached',detached);
+  if(!detached)setView(S.config.general.startView==='multichat'?'dashboard':S.config.general.startView || 'start');
+  if (detached) {
+    $('#sidebar').style.display = 'none';
+    document.querySelector('.shell').style.gridTemplateColumns = '1fr';
+    $$('.dashboard-grid>.card:not(.chat-card)').forEach((x) => { x.style.display = 'none'; });
+    $('.dashboard-grid').style.display = 'block';
+    $('.chat-card').style.height = '100%';
+    $('#detachBtn').textContent = '↙';
+  }
+
+  api.onChatMessage((message) => {
+    S.messages.push(message);
+    const max = S.config.multiChat.maxMessages || 5000;
+    if (S.messages.length > max) S.messages.splice(0, S.messages.length - max);
+    renderChat();
+  });
+  api.onAdapterStatus((status) => {
+    S.adapters[status.name] = status;
+    renderConnections();
+    if (S.view === 'platforms') renderPlatformsModule();
+  });
+  api.onModerationEvent(async () => {
+    const state = await api.getState();
+    S.moderation = state.moderation;
+    S.history = state.moderationHistory;
+    renderModeration(); renderHistory();
+    if (S.view === 'moderation') renderModerationModule();
+  });
+  api.onFilterHit((hit) => toast(`Chat-Filter: ${hit.username} · ${hit.term}`));
+  api.onPlatformEvent((event) => { if (['gift', 'follow', 'subscribe'].includes(event.event)) toast(`${event.platform || 'Event'} ${event.event}: ${event.data?.nickname || event.data?.uniqueId || ''}`); });
+  api.onObsStatus((status) => { S.obs = status; renderConnections(); if (S.view === 'platforms') renderPlatformsModule(); });
+  api.onSystemStatus(updateSystem);
+  api.onTtsSpeak((payload) => {if(!detached)playTts(payload);});
+  api.onConfigChanged((config) => {
+    S.config = config;
+    applyAppearance();
+    renderDashboard();
+    if (S.view !== 'dashboard') renderModule(S.view);
+  });
+}
+
+boot().catch((error) => {
+  console.error(error);
+  toast(`Startfehler: ${error.message}`, true);
+});

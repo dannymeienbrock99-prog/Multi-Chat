@@ -110,6 +110,7 @@ ipcMain.handle = (channel, listener) => {
 };
 
 if (process.argv.includes('--batto-qa')) require('./qa-self-test.cjs');
+if (process.argv.includes('--batto-qa-resume')) require('./qa-resume.cjs');
 require('./main21.cjs');
 
 nativeHandle('automation:cancel', (_event, ruleId) => globalThis.__battoActionEngine?.cancel?.(ruleId) || { ok:false, error:'Action Engine ist noch nicht bereit.' });

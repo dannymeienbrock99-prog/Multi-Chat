@@ -29,7 +29,7 @@ function finish(ok, error) {
   if (!ok) { console.error(error); app.exit(1); }
   else { console.log('Installed Electron UI/IPC self-test passed.'); app.quit(); }
 }
-const timer = setTimeout(() => finish(false, new Error('Installed app QA exceeded 60 seconds')), 60000);
+const timer = setTimeout(() => finish(false, new Error('Installed app QA exceeded 120 seconds')), 120000);
 timer.unref();
 app.whenReady().then(async () => {
   const win = await waitFor(() => BrowserWindow.getAllWindows()[0], 'main window');
@@ -41,7 +41,8 @@ app.whenReady().then(async () => {
   assert.equal(state.config.http.port, 17777);
   assert.equal(state.config.obs.url, 'ws://127.0.0.1:4455');
   checks.push('Separate OBS 4455 / Overlay 17777');
-  assert.equal(await run("return Array.from(document.images).every(img => img.complete && img.naturalWidth > 0);"), true);
+  await waitFor(()=>run("return Array.from(document.images).every(img => img.complete && img.naturalWidth > 0);"),"Originalbilder dekodiert");
+  await run("setView('dashboard');");
   checks.push('All visible branding images decoded');
   await run("document.querySelector('#sendPlatform').value='local'; document.querySelector('#messageInput').value='QA CHAT 2101'; document.querySelector('#composer').requestSubmit();");
   await waitFor(() => run("return document.querySelector('#chatList').textContent.includes('QA CHAT 2101');"), 'local chat render');
@@ -76,5 +77,6 @@ app.whenReady().then(async () => {
   const persisted = JSON.parse(fs.readFileSync(path.join(profile, 'Batto-OBS-Tool', 'settings.json'), 'utf8'));
   assert.equal(persisted.appearance.backgroundDarkness, 0.4);
   checks.push('Settings written to disk; desktop screenshot captured');
+  await require('./qa-release.cjs')({win,run,waitFor,checks,dir,profile});
   finish(true);
 }).catch(error => finish(false, error));

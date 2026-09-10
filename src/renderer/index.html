@@ -6,6 +6,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: file: http: https:; media-src 'self' file: blob:; frame-src http: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ws://127.0.0.1:* http://127.0.0.1:* ws://localhost:* https://www.googleapis.com;">
   <title>CRAZY_BATTO Multi-Chat Platform</title>
   <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./marble-gold.css" />
 </head>
 <body>
   <div class="bg-watermark" aria-hidden="true"></div>
@@ -20,9 +21,9 @@
       </div>
       <div class="top-status">
         <span class="chip" id="obsChip"><i></i>OBS 4455</span>
-        <span class="chip" id="overlayChip"><i></i>Overlay 8787</span>
+        <span class="chip" id="overlayChip"><i></i>Overlay 17777</span>
         <span class="chip" id="tikfinityChip"><i></i>TikFinity Bridge</span>
-        <span class="chip ok"><i></i>Online</span>
+        <span class="chip"><i></i>Lokal bereit</span>
         <button class="icon-btn" id="detachBtn" title="Chat entkoppeln">↗</button>
       </div>
     </header>
@@ -30,6 +31,7 @@
     <div class="shell">
       <aside class="sidebar" id="sidebar">
         <nav id="mainNav">
+          <button class="nav-item" data-view="start"><b>⌂</b><span>Start</span></button>
           <button class="nav-item active" data-view="dashboard"><b>▣</b><span>Multi-Chat</span></button>
           <button class="nav-item" data-view="moderation"><b>♢</b><span>Moderation</span></button>
           <button class="nav-item" data-view="filters"><b>▽</b><span>Chat-Filter</span></button>
@@ -54,6 +56,7 @@
       </aside>
 
       <main class="content" id="content">
+        <section class="view start-view" data-view-panel="start"><img class="start-art" src="../assets/source/start-original.png" alt="CRAZY_BATTO Startseite"></section>
         <section class="view active" data-view-panel="dashboard">
           <div class="dashboard-grid">
             <section class="card chat-card">
@@ -129,7 +132,7 @@
     </div>
 
     <footer class="statusbar">
-      <div><span class="status-dot ok"></span>System Online <span class="sep">|</span> Version 1.1.0 <span class="sep">|</span> Team Alpha</div>
+      <div><span class="status-dot ok"></span>System bereit <span class="sep">|</span> Version 2.1.3 <span class="sep">|</span> Team Alpha</div>
       <div class="metrics"><span>CPU <b id="cpuStat">–</b></span><meter id="cpuMeter" min="0" max="100"></meter><span>RAM <b id="ramStat">–</b></span><meter id="ramMeter" min="0" max="100"></meter><span>Upload <b id="uploadStat">–</b></span><span>FPS <b id="fpsStat">–</b></span><span>Bitrate <b id="bitrateStat">–</b></span></div>
       <div id="clock"></div>
     </footer>
@@ -145,6 +148,9 @@
     <button data-action="unblock">🔓 Entblocken</button>
   </div>
   <div id="toast" class="toast" hidden></div>
+  <script src="./broadcast-ui.js"></script>
   <script src="./app.js"></script>
+  <script src="./v21-ui.js"></script>
+  <script src="./release-ui.js"></script>
 </body>
 </html>

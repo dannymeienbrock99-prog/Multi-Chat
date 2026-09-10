@@ -1,3 +1,8 @@
+const OVERLAY_CLIENT = `function connectBatto(){
+ const proxy={onmessage:null,send:value=>{if(socket?.readyState===1)socket.send(value);}};let socket,attempt=0,closed=false;
+ function open(){if(closed)return;socket=new WebSocket('ws://'+location.host+'/ws');socket.onopen=()=>{attempt=0;};socket.onmessage=e=>{try{const x=JSON.parse(e.data);if(x.type==='config'){const route=location.pathname,sections=x.sections||[];if((route.includes('/cohost/')&&sections.includes('cohost'))||(route.includes('/chat')&&sections.includes('chatDesign')))location.reload();}else proxy.onmessage?.(e);}catch{}};socket.onclose=()=>{if(!closed)setTimeout(open,[1000,2000,5000,10000,30000][Math.min(attempt++,4)]);};socket.onerror=()=>socket.close();}
+ window.addEventListener('beforeunload',()=>{closed=true;socket?.close();});open();return proxy;
+}`;
 const express = require('express');
 const http = require('http');
 const path = require('path');
@@ -32,7 +37,14 @@ class OverlayServer {
 
   allowRequest(req) {
     const cfg = this.configStore.get().http || {};
-    return isLoopback(req) || cfg.allowLan === true;
+    if(!isLoopback(req) && cfg.allowLan!==true)return false;
+    try{
+      const target=new URL('http://'+req.headers.host);
+      if(Number(target.port || 80)!==this.port)return false;
+      if(cfg.allowLan!==true && !['127.0.0.1','localhost','[::1]'].includes(target.hostname))return false;
+      if(req.headers.origin){const origin=new URL(req.headers.origin);if(origin.origin!==target.origin)return false;}
+      return true;
+    }catch{return false;}
   }
 
   getStatus() {
@@ -58,8 +70,8 @@ body{font-family:${font},Segoe UI,Arial;color:${esc(design.messageColor || '#fff
 .user{color:${esc(design.usernameColor || '#00d4ff')};font-weight:900;text-shadow:0 0 ${Number(design.glow || 10)}px currentColor}
 .text{font-size:${Number(design.fontSize || 20)}px;line-height:1.35;margin-left:9px}.platform{font-size:11px;text-transform:uppercase;opacity:.72;margin-right:8px}
 @keyframes in{from{opacity:0;transform:translateY(16px) scale(.98)}to{opacity:1;transform:none}}
-</style></head><body><div id="chat"></div><script>
-const chat=document.getElementById('chat');const ws=new WebSocket('ws://'+location.host+'/ws');
+</style><script src="/overlay-client.js"></script></head><body><div id="chat"></div><script>
+const chat=document.getElementById('chat');const ws=connectBatto();
 function add(m){const row=document.createElement('div');row.className='msg';const p=document.createElement('span');p.className='platform';p.textContent=m.platform;const u=document.createElement('span');u.className='user';u.textContent=m.displayName||m.username;const t=document.createElement('span');t.className='text';t.textContent=m.message;row.append(p,u,t);chat.append(row);while(chat.children.length>8)chat.firstElementChild.remove();setTimeout(()=>row.remove(),${Math.max(2, Number(design.displaySeconds || 12)) * 1000})}
 fetch('/state').then(r=>r.json()).then(s=>(s.messages||[]).slice(-5).forEach(add)).catch(()=>{});ws.onmessage=e=>{try{const x=JSON.parse(e.data);if(x.type==='chat')add(x.data)}catch{}};
 </script></body></html>`;
@@ -69,16 +81,16 @@ fetch('/state').then(r=>r.json()).then(s=>(s.messages||[]).slice(-5).forEach(add
     return `<!doctype html><html><head><meta charset="utf-8"><style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:Segoe UI;color:#fff}
 #box{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none}.card{max-width:75%;padding:20px 28px;border-radius:22px;background:rgba(1,13,32,.78);border:1px solid rgba(0,212,255,.38);box-shadow:0 20px 70px rgba(0,0,0,.38),0 0 30px rgba(0,145,255,.18);backdrop-filter:blur(14px);text-align:center;opacity:0;transform:scale(.92);transition:.25s}.card.show{opacity:1;transform:none}.title{font-size:14px;text-transform:uppercase;color:#61dcff}.big{font-size:32px;font-weight:900;margin-top:6px}
-</style></head><body><div id="box"><div id="card" class="card"><div class="title">${esc(kind)}</div><div id="big" class="big"></div></div></div><script>
-const card=document.getElementById('card'),big=document.getElementById('big');let t;const ws=new WebSocket('ws://'+location.host+'/ws');ws.onmessage=e=>{try{const x=JSON.parse(e.data);if(x.type!=='event')return;const evt=x.data||{};const normalizedType=evt.type||evt.event;if('${kind}'!=='all'&&normalizedType!=='${kind}')return;const d=evt.data||evt;big.textContent=d.user?.displayName||d.nickname||d.uniqueId||d.username||d.message?.text||d.text||normalizedType||'Event';card.classList.add('show');clearTimeout(t);t=setTimeout(()=>card.classList.remove('show'),5000)}catch{}};
+</style><script src="/overlay-client.js"></script></head><body><div id="box"><div id="card" class="card"><div class="title">${esc(kind)}</div><div id="big" class="big"></div></div></div><script>
+const card=document.getElementById('card'),big=document.getElementById('big');let t;const ws=connectBatto();ws.onmessage=e=>{try{const x=JSON.parse(e.data);if(x.type!=='event')return;const evt=x.data||{};const normalizedType=evt.type||evt.event;if('${kind}'!=='all'&&normalizedType!=='${kind}')return;const d=evt.data||evt;big.textContent=d.user?.displayName||d.nickname||d.uniqueId||d.username||d.message?.text||d.text||normalizedType||'Event';card.classList.add('show');clearTimeout(t);t=setTimeout(()=>card.classList.remove('show'),5000)}catch{}};
 </script></body></html>`;
   }
 
   mediaHtml() {
     return `<!doctype html><html><head><meta charset="utf-8"><style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}#stage{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none}video,img{max-width:100%;max-height:100%;object-fit:contain;filter:drop-shadow(0 18px 45px rgba(0,0,0,.4))}audio{display:none}.fade{animation:show .2s ease-out}@keyframes show{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
-</style></head><body><div id="stage"></div><script>
-const stage=document.getElementById('stage');const ws=new WebSocket('ws://'+location.host+'/ws');let current=null,timer=null;
+</style><script src="/overlay-client.js"></script></head><body><div id="stage"></div><script>
+const stage=document.getElementById('stage');const ws=connectBatto();let current=null,timer=null;
 function clear(){clearTimeout(timer);if(current){try{current.pause?.()}catch{};current.remove();current=null}stage.innerHTML=''}
 function play(d){clear();if(!d?.mediaId)return;const type=String(d.mediaType||'').toLowerCase();const url='/media/'+encodeURIComponent(d.mediaId);let el;if(['mp4','webm'].includes(type)){el=document.createElement('video');el.autoplay=true;el.playsInline=true}else if(['mp3','wav','ogg'].includes(type)){el=document.createElement('audio');el.autoplay=true}else{el=document.createElement('img')}el.src=url;el.className='fade';if('volume'in el)el.volume=Math.max(0,Math.min(1,Number(d.volume??1)));stage.append(el);current=el;const seconds=Number(d.durationSeconds||0);if(seconds>0)timer=setTimeout(clear,seconds*1000);else if(el.tagName==='AUDIO'||el.tagName==='VIDEO')el.onended=clear;else timer=setTimeout(clear,8000);el.play?.().catch(()=>{})}
 ws.onmessage=e=>{try{const x=JSON.parse(e.data);if(x.type==='event'&&(x.data?.event==='media'||x.data?.type==='custom'&&x.data?.data?.event==='media'))play(x.data.data||{})}catch{}};
@@ -100,14 +112,16 @@ ws.onmessage=e=>{try{const x=JSON.parse(e.data);if(x.type==='event'&&(x.data?.ev
     }).join('');
     return `<!doctype html><html><head><meta charset="utf-8"><style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:Segoe UI;color:white}.grid{position:absolute;inset:0;display:grid;grid-template-columns:repeat(${cols},1fr);grid-auto-rows:1fr;gap:${portrait ? '12' : '18'}px;padding:${portrait ? '12' : '18'}px}.guest{overflow:hidden;border-radius:20px;background:rgba(3,16,36,.72);border:2px solid rgba(0,212,255,.34);box-shadow:inset 0 0 40px rgba(0,90,180,.1);display:grid;place-items:center}.guest iframe{width:100%;height:100%;border:0}.placeholder{text-align:center;color:#d7efff}.avatar{width:72px;height:72px;border-radius:50%;display:grid;place-items:center;margin:0 auto 12px;background:linear-gradient(145deg,#0b5597,#071a33);border:1px solid #20bfff;font-size:30px;font-weight:900}.placeholder strong{display:block;font-size:24px}.placeholder span{display:block;color:#7ea6c6;margin-top:6px;font-size:13px}
-</style></head><body><main class="grid">${cards}</main></body></html>`;
+</style><script src="/overlay-client.js"></script></head><body><main class="grid">${cards}</main></body></html>`;
   }
 
   async start() {
     if (this.server?.listening) return this.getStatus();
     const app = express();
     app.disable('x-powered-by');
+    app.use((req,res,next)=>{if(!this.allowRequest(req))return res.sendStatus(403);res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');next();});
     app.use(express.json({ limit: '256kb' }));
+    app.get('/overlay-client.js',(_req,res)=>res.type('application/javascript').send(OVERLAY_CLIENT));
 
     app.get('/health', (_req, res) => res.json({ ok: true, service: 'batto-obs-tool-2.1', ...this.getStatus() }));
     app.get('/state', (_req, res) => res.json({ messages: this.chatCore.getMessages().slice(-100) }));

@@ -1,4 +1,5 @@
 const { spawn } = require('child_process');
+const fs = require('node:fs');
 
 function expand(text, ctx = {}) {
   return String(text ?? '').replace(/\{([\w.]+)\}/g, (_m, key) => {
@@ -49,8 +50,9 @@ function cancellableDelay(ms, signal) {
 }
 
 class ActionEngine {
-  constructor({ getConfig, sendChat, onTts, onOverlay, onDiscord, onLog, onAudit, onHttp }) {
+  constructor({ getConfig, sendChat, onTts, onOverlay, onDiscord, onLog, onAudit, onHttp, isLive = () => false }) {
     this.getConfig = getConfig;
+    this.isLive = isLive;
     this.sendChat = sendChat;
     this.onTts = onTts;
     this.onOverlay = onOverlay;
@@ -85,12 +87,12 @@ class ActionEngine {
     for (const cmd of cfg.commands || []) {
       if (cmd.enabled === false) continue;
       const platform = String(cmd.platform || 'all').toLowerCase();
-      if (platform !== 'all' && platform !== message.platform) continue;
+      if (platform !== 'all' && (platform==='local'?'internal':platform) !== (message.platform==='local'?'internal':message.platform)) continue;
       const trigger = String(cmd.trigger || '').trim();
       if (!trigger) continue;
       const raw = String(message.message || '').trim();
       const match = cmd.caseSensitive ? raw.startsWith(trigger) : raw.toLowerCase().startsWith(trigger.toLowerCase());
-      if (!match) continue;
+      if (!match || (raw.length>trigger.length && !/\s/.test(raw[trigger.length]))) continue;
       const key = `${message.platform}:${cmd.id || trigger}:${cmd.perUserCooldown === false ? 'global' : message.username}`;
       const now = Date.now();
       const until = this.commandCooldowns.get(key) || 0;
@@ -100,10 +102,10 @@ class ActionEngine {
     }
   }
 
-  eventType(evt) { return String(evt?.type || evt?.event || '').toLowerCase(); }
+  eventType(evt) {const t=String(evt?.type || evt?.event || '').toLowerCase();return ['subscribe','subscription','resub'].includes(t)?'sub':t;}
   eventData(evt) {
     if (evt?.schemaVersion) {
-      return { ...(evt.user || {}), user: evt.user || {}, message: evt.message?.text || '', gift: evt.gift || null, giftName: evt.gift?.name, value: evt.gift?.value, count: evt.gift?.count, moderation: evt.moderation || null };
+      return { ...(evt.data || {}), ...(evt.user || {}), user:evt.user?.displayName || evt.user?.username || 'Unknown', message: evt.message?.text || '', gift: evt.gift || null, giftName: evt.gift?.name, value: evt.gift?.value ?? evt.data?.value, count: evt.gift?.count ?? evt.data?.count, moderation: evt.moderation || null };
     }
     return evt?.data || {};
   }
@@ -112,7 +114,7 @@ class ActionEngine {
     if (rule.enabled === false) return false;
     const platform = String(rule.platform || 'all').toLowerCase();
     if (platform !== 'all' && platform !== String(evt.platform || '').toLowerCase()) return false;
-    if (String(rule.event || rule.trigger?.event || '').toLowerCase() !== this.eventType(evt)) return false;
+    if (this.eventType({type:rule.event || rule.trigger?.event}) !== this.eventType(evt)) return false;
     const data = this.eventData(evt);
     const matchText = String(rule.matchText || rule.trigger?.matchText || '').trim().toLowerCase();
     if (matchText) {
@@ -138,6 +140,7 @@ class ActionEngine {
 
   async executeRule(rule, ctx, kind) {
     const cfg = this.getConfig();
+    if(rule.onlyWhenLive && !this.isLive())return{ok:false,skipped:'not-live'};
     const id = String(rule.id || `${kind}:${rule.trigger || rule.event || 'rule'}`);
     const now = Date.now();
     const cooldownMs = Math.max(0, Number(rule.cooldownSeconds || 0)) * 1000;
@@ -184,10 +187,13 @@ class ActionEngine {
     const cfg = this.getConfig();
     const pool = (cfg.mediaPools || []).find((item) => item.id === poolId);
     if (!pool) throw new Error('Medien-Pool nicht gefunden.');
-    const media = (pool.mediaIds || []).map((id) => this.resolveMedia(id)).filter(Boolean);
+    const configured=(pool.mediaIds || []).map(id=>this.resolveMedia(id));
+    const available=item=>Boolean(item && (!item.path || fs.existsSync(item.path)));
+    if(pool.missingPolicy==='stop' && configured.some(item=>!available(item)))throw new Error('Eine Datei im Medien-Pool fehlt.');
+    const media=configured.filter(available);
     if (!media.length) throw new Error(`Medien-Pool "${pool.name || pool.id}" ist leer.`);
     let selected;
-    if ((pool.mode || 'random') === 'sequence') {
+    if (['sequence','rotation'].includes(pool.mode || 'random')) {
       const index = this.poolCursor.get(pool.id) || 0;
       selected = media[index % media.length];
       this.poolCursor.set(pool.id, (index + 1) % media.length);
@@ -220,6 +226,7 @@ class ActionEngine {
         attempt += 1;
         try {
           const result = await withTimeout(this.executeOne(action, ctx, signal), action.timeoutMs || timeoutMs, action.type || 'Aktion', signal);
+          if(result?.ok===false)throw new Error(result.error || 'Aktion fehlgeschlagen.');
           results.push({ ok: true, type: action.type, result });
           succeeded = true;
         } catch (error) {
@@ -239,7 +246,7 @@ class ActionEngine {
       }
     }
     this.onAudit?.({ phase: 'end', runId: options.runId || null, ruleId: options.ruleId || null, startedAt: new Date(startedAt).toISOString(), durationMs: Date.now() - startedAt, result: 'success' });
-    return { ok: true, results };
+    return { ok:results.every(x=>x.ok), results, error:results.some(x=>!x.ok)?'Mindestens eine Aktion ist fehlgeschlagen.':undefined };
   }
 
   async executeOne(action, ctx, signal) {
@@ -251,7 +258,7 @@ class ActionEngine {
       return { delayedMs: ms };
     }
     if (type === 'chat') { const platform = action.platform === 'same' || !action.platform ? ctx.platform : action.platform; return this.sendChat?.(platform, expand(action.text, ctx)); }
-    if (type === 'tts') return this.onTts?.({ text: expand(action.text || ctx.message || '', ctx), voice: action.voice || '', rate: action.rate || 1, pitch: action.pitch || 1, volume: action.volume ?? 1 });
+    if (type === 'tts') {const t=this.getConfig().tts || {};return this.onTts?.({text:expand(action.text || ctx.message || '',ctx),voice:action.voice || t.voice || '',rate:action.rate ?? t.rate ?? 1,pitch:action.pitch ?? t.pitch ?? 1,volume:action.volume ?? t.volume ?? 1,outputDeviceId:action.outputDeviceId || t.outputDeviceId || 'default'});}
     if (type === 'overlay') return this.onOverlay?.({ type: action.eventType || 'custom', data: { ...ctx, text: expand(action.text || '', ctx) } });
     if (type === 'media') { const media = this.resolveMedia(action.mediaId); if (!media) throw new Error('Medium nicht gefunden.'); return this.onOverlay?.({ type: 'media', data: { ...ctx, mediaId: media.id, mediaName: media.name, mediaType: media.type, volume: action.volume ?? 1, durationSeconds: action.durationSeconds || 0 } }); }
     if (type === 'mediapool' || type === 'media_pool') { const resolved = this.resolvePool(action.poolId); return this.onOverlay?.({ type: 'media', data: { ...ctx, poolId: resolved.pool.id, mediaId: resolved.media.id, mediaName: resolved.media.name, mediaType: resolved.media.type, volume: action.volume ?? resolved.pool.volume ?? 1, durationSeconds: action.durationSeconds || resolved.pool.durationSeconds || 0 } }); }
@@ -264,7 +271,7 @@ class ActionEngine {
   hotkey(action) {
     if (process.platform !== 'win32') throw new Error('Hotkeys werden nur unter Windows ausgeführt.');
     const keys = String(action.keys || '').trim();
-    const target = String(action.process || '').trim();
+    const target = String(action.process || '').trim().replace(/\.exe$/i,'');
     if (!keys) throw new Error('Hotkey fehlt.');
     if (!target) throw new Error('Zielprozess für Hotkey fehlt.');
     const safeTarget = target.replace(/'/g, "''");

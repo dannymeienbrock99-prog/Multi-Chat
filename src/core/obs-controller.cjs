@@ -43,6 +43,7 @@ class OBSController {
       reconnectAttempt: 0
     };
 
+    this.obs.on('StreamStateChanged', event=>this.setStatus({outputActive:Boolean(event.outputActive)}));
     this.obs.on('ConnectionClosed', () => {
       this.connected = false;
       this.connectPromise = null;
@@ -62,6 +63,7 @@ class OBSController {
       url: this.url,
       reconnectAttempt: this.reconnectAttempt
     };
+    if(!this.connected)this.status.outputActive=false;
     this.onStatus?.({ ...this.status });
   }
 
@@ -167,6 +169,7 @@ class OBSController {
         this.call('GetStats'),
         this.call('GetStreamStatus').catch(() => null)
       ]);
+      this.status.outputActive=Boolean(stream?.outputActive);
       return {
         fps: stats.activeFps ?? null,
         cpu: stats.cpuUsage ?? null,

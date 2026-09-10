@@ -1,0 +1,8 @@
+'use strict';
+const {app,BrowserWindow}=require('electron'),fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const dir=process.env.BATTO_QA_DIR;if(!dir)throw new Error('BATTO_QA_DIR required');
+app.setPath('userData',path.join(dir,'isolated-profile'));app.disableHardwareAcceleration();
+let done=false;
+function finish(ok,error){if(done)return;done=true;fs.writeFileSync(path.join(dir,'resume-result.json'),JSON.stringify({ok,error:error?.stack,version:app.getVersion(),checks:ok?['Independent process restart preserves broadcasts, deletions, volume, schema and Start view']:[]}));ok?app.quit():app.exit(1);}
+const timeout=setTimeout(()=>finish(false,new Error('Restart test timed out')),30000);timeout.unref();
+app.whenReady().then(async()=>{try{const expected=JSON.parse(fs.readFileSync(path.join(dir,'resume-expectations.json')));let win,state;const deadline=Date.now()+20000;while(Date.now()<deadline){win=BrowserWindow.getAllWindows()[0];if(win){try{state=await win.webContents.executeJavaScript(`typeof S!=='undefined'&&S.config?{config:S.config,view:S.view}:null`);}catch{}if(state)break;}await new Promise(r=>setTimeout(r,100));}assert(state);assert.equal(app.getVersion(),'2.1.3');assert.equal(state.config.schemaVersion,expected.schemaVersion);assert.equal(state.config.autoBroadcast.items.length,expected.broadcasts);assert.equal(state.config.autoBroadcast.items[0].name,expected.broadcastName);assert.equal(state.config.tts.volume,expected.volume);assert.equal(state.view,'start');clearTimeout(timeout);finish(true);}catch(e){finish(false,e);}});

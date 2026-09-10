@@ -1,3 +1,4 @@
+const { normalizeItem, LIMIT } = require('../broadcast/scheduler.cjs');
 const PORT_MIN = 1024;
 const PORT_MAX = 65535;
 
@@ -74,6 +75,21 @@ function validateConfig(config) {
   if (!numberIn(c.appearance?.uiScale ?? 1, .5, 2)) errors.push(issue('appearance.uiScale', 'UI-Skalierung muss zwischen 0.5 und 2 liegen.'));
   if (!numberIn(c.appearance?.backgroundDarkness ?? .28, 0, .9)) errors.push(issue('appearance.backgroundDarkness', 'Hintergrund-Abdunklung muss zwischen 0 und 0.9 liegen.'));
 
+  const bc=c.autoBroadcast || {};
+  if (bc.items !== undefined) {
+    if (!Array.isArray(bc.items) || bc.items.length>LIMIT) errors.push(issue('autoBroadcast.items','Maximal 100 Broadcasts erlaubt.'));
+    else {
+      const ids=new Set();
+      bc.items.forEach((item,index)=>{try{const normalized=normalizeItem(item);if(ids.has(normalized.id))throw new Error('Doppelte Broadcast-ID.');ids.add(normalized.id);}catch(e){errors.push(issue('autoBroadcast.items.'+index,e.message));}});
+    }
+  }
+  for(const key of ['globalMinGapSeconds','platformMinGapSeconds']) if(!numberIn(bc[key]??3,0,3600))errors.push(issue('autoBroadcast.'+key,'Mindestabstand muss zwischen 0 und 3600 Sekunden liegen.'));
+  for(const section of ['commands','events'])for(const [index,rule] of (c[section] || []).entries()){
+    if(!rule || !Array.isArray(rule.actions) || !rule.actions.length || rule.actions.length>50)errors.push(issue(section+'.'+index,'1 bis 50 Aktionen erforderlich.'));
+    if(!numberIn(rule.cooldownSeconds??0,0,86400))errors.push(issue(section+'.'+index+'.cooldownSeconds','Ungültiger Cooldown.'));
+    if(!numberIn(rule.timeoutMs??5000,250,60000))errors.push(issue(section+'.'+index+'.timeoutMs','Timeout: 250 bis 60000 ms.'));
+    if(rule.failurePolicy && !['continue','stop-sequence','retry-once'].includes(rule.failurePolicy))errors.push(issue(section+'.'+index+'.failurePolicy','Ungültiges Fehlerverhalten.'));
+  }
   return { ok: errors.length === 0, errors };
 }
 

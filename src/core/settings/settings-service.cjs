@@ -1,69 +1,17 @@
+'use strict';
 const { EventEmitter } = require('events');
 const { deepMerge, DEFAULT_CONFIG } = require('../config-store.cjs');
 const { validateConfig } = require('./schema.cjs');
-
 class SettingsService extends EventEmitter {
-  constructor({ configStore } = {}) {
-    super();
-    if (!configStore) throw new Error('SettingsService benötigt ConfigStore.');
-    this.configStore = configStore;
-    this.draft = configStore.get();
-    this.dirty = false;
-  }
-
-  getPersisted() { return this.configStore.get(); }
-  getDraft() { return structuredClone(this.draft); }
-  isDirty() { return this.dirty; }
-
-  syncIfClean() {
-    if (!this.dirty) this.draft = this.configStore.get();
-  }
-
-  patch(patch) {
-    this.syncIfClean();
-    const candidate = deepMerge(this.draft, patch || {});
-    const validation = validateConfig(candidate);
-    this.draft = candidate;
-    this.dirty = JSON.stringify(this.draft) !== JSON.stringify(this.configStore.get());
-    this.emit('draft', { config: this.getDraft(), dirty: this.dirty, validation });
-    return { config: this.getDraft(), dirty: this.dirty, validation };
-  }
-
-  apply() {
-    const validation = validateConfig(this.draft);
-    if (!validation.ok) return { ok: false, validation };
-    const persisted = this.configStore.merge(this.draft);
-    this.draft = persisted;
-    this.dirty = false;
-    this.emit('applied', persisted);
-    return { ok: true, config: structuredClone(persisted) };
-  }
-
-  discard() {
-    this.draft = this.configStore.get();
-    this.dirty = false;
-    this.emit('discarded', this.getDraft());
-    return { ok: true, config: this.getDraft() };
-  }
-
-  resetSection(section) {
-    this.syncIfClean();
-    if (!(section in DEFAULT_CONFIG)) return { ok: false, error: 'Unbekannter Bereich.' };
-    const candidate = structuredClone(this.draft);
-    candidate[section] = structuredClone(DEFAULT_CONFIG[section]);
-    const validation = validateConfig(candidate);
-    this.draft = candidate;
-    this.dirty = true;
-    this.emit('draft', { config: this.getDraft(), dirty: true, validation });
-    return { ok: validation.ok, config: this.getDraft(), validation };
-  }
-
-  test(section) {
-    this.syncIfClean();
-    const validation = validateConfig(this.draft);
-    const related = validation.errors.filter((x) => x.path === section || x.path.startsWith(`${section}.`));
-    return { ok: related.length === 0, errors: related };
-  }
+  constructor({configStore}={}) {super();if(!configStore)throw new Error('SettingsService benötigt ConfigStore.');this.configStore=configStore;this.pending={};this.draft=configStore.get();this.dirty=false;}
+  getPersisted(){return this.configStore.get();}
+  getDraft(){this.draft=deepMerge(this.configStore.get(),this.pending);return structuredClone(this.draft);}
+  isDirty(){return this.dirty;}
+  syncIfClean(){if(!this.dirty)this.draft=this.configStore.get();}
+  patch(patch={}){this.pending=deepMerge(this.pending,patch);const config=this.getDraft();this.dirty=JSON.stringify(config)!==JSON.stringify(this.configStore.get());const validation=validateConfig(config);this.emit('draft',{config,dirty:this.dirty,validation});return{config,dirty:this.dirty,validation};}
+  apply(){const validation=validateConfig(this.getDraft());if(!validation.ok)return{ok:false,validation};const persisted=this.configStore.merge(this.pending);this.pending={};this.draft=persisted;this.dirty=false;this.emit('applied',persisted);return{ok:true,config:structuredClone(persisted)};}
+  discard(){this.pending={};this.draft=this.configStore.get();this.dirty=false;this.emit('discarded',this.getDraft());return{ok:true,config:this.getDraft()};}
+  resetSection(section){if(!(section in DEFAULT_CONFIG))return{ok:false,error:'Unbekannter Bereich.'};const result=this.patch({[section]:structuredClone(DEFAULT_CONFIG[section])});return{ok:result.validation.ok,...result};}
+  test(section){const validation=validateConfig(this.getDraft());const errors=validation.errors.filter(x=>x.path===section||x.path.startsWith(section+'.'));return{ok:errors.length===0,errors};}
 }
-
-module.exports = { SettingsService };
+module.exports={SettingsService};

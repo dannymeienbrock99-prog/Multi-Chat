@@ -1,16 +1,17 @@
+const { fromLegacy } = require('./broadcast/scheduler.cjs');
 const fs = require('fs');
 const path = require('path');
 const { atomicWrite } = require('./storage/atomic-file.cjs');
 const { assertValidConfig, validateConfig } = require('./settings/schema.cjs');
 
 const CURRENT_VERSION = 6;
-const CURRENT_SCHEMA_VERSION = 3;
+const CURRENT_SCHEMA_VERSION = 4;
 
 const DEFAULT_CONFIG = {
   version: CURRENT_VERSION,
   schemaVersion: CURRENT_SCHEMA_VERSION,
-  general: { displayName:'Crazy_Batto', language:'de', autoSave:false, startMinimized:false, startView:'multichat', minimizeToTray:false, updateBehavior:'manual' },
-  appearance: { uiScale:1, panelOpacity:.9, brightness:1, compact:false, programBackground:true, backgroundDarkness:.28, theme:'crazy-batto' },
+  general: { displayName:'Crazy_Batto', language:'de', autoSave:false, startMinimized:false, startView:'start', minimizeToTray:false, updateBehavior:'manual' },
+  appearance: { uiScale:1, panelOpacity:.9, brightness:1, compact:false, programBackground:true, backgroundDarkness:.28, theme:'marble-gold' },
   sync: { enabled:true, debounceMs:250, modules:{ platforms:true, commands:true, autoBroadcast:true, events:true, mediaPools:true, tts:true, cng:true, cohost:true, overlays:true, obs:true, alerts:true } },
   multiChat: { enabled:true, defaultTab:'all', showTimestamp:true, showPlatform:true, showBadges:true, autoScroll:true, maxMessages:500, fontFamily:'Segoe UI', fontSize:14 },
   moderation: {
@@ -31,7 +32,7 @@ const DEFAULT_CONFIG = {
   },
   commands: [], hotkeys: [], events: [],
   rules: { maxConcurrentRuns:25, defaultTimeoutMs:5000, defaultFailurePolicy:'stop-sequence', httpAllowlist:[] },
-  autoBroadcast: { enabled:false, intervalSeconds:600, startDelaySeconds:30, mode:'sequence', targets:['cng'], messages:[], localCngOverlay:true },
+  autoBroadcast: { items:[], globalMinGapSeconds:3, platformMinGapSeconds:5, enabled:false, intervalSeconds:600, startDelaySeconds:30, mode:'sequence', targets:['cng'], messages:[], localCngOverlay:true },
   media: [], mediaPools: [],
   mediaEngine: { ffmpegPath:'auto', encoder:'auto', fps:60, videoBitrateKbps:12000, audioSampleRate:48000, audioChannels:2, profile:'twitch-1080p', restartPolicy:'manual' },
   tts: { enabled:false, readChat:false, voice:'', language:'de-DE', rate:1, pitch:1, volume:1, outputDeviceId:'default', outputDeviceLabel:'Systemstandard', queueLimit:100, platforms:['twitch','tiktok','cng','youtube'], stripUrls:true },
@@ -90,6 +91,15 @@ function migrateSchema2To3(input) {
   return cfg;
 }
 
+function migrateSchema3To4(input) {
+  const cfg=clone(input || {});
+  cfg.schemaVersion=4;
+  cfg.autoBroadcast={...(cfg.autoBroadcast || {}), items:fromLegacy(cfg.autoBroadcast || {})};
+  cfg.general={...(cfg.general || {})};
+  if (!cfg.general.startView || ['multichat','dashboard'].includes(cfg.general.startView)) cfg.general.startView='start';
+  cfg.appearance={...(cfg.appearance || {}),theme:'marble-gold'};
+  return cfg;
+}
 function migrateConfig(input) {
   let source = input && typeof input === 'object' ? clone(input) : {};
   let schema = Number(source.schemaVersion || 1);
@@ -97,6 +107,7 @@ function migrateConfig(input) {
   while (schema < CURRENT_SCHEMA_VERSION) {
     if (schema === 1) source = migrateSchema1To2(source);
     else if (schema === 2) source = migrateSchema2To3(source);
+    else if (schema === 3) source = migrateSchema3To4(source);
     else throw new Error(`Keine Settings-Migration von Schema ${schema} verfügbar.`);
     schema = Number(source.schemaVersion);
   }

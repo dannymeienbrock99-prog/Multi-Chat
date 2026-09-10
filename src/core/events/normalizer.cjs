@@ -13,7 +13,7 @@ function normalizeType(value, fallback = 'custom') {
   const t = safeString(value || fallback).toLowerCase();
   if (t === 'comment' || t === 'message') return 'chat';
   if (t === 'subscribe' || t === 'subscription' || t === 'resub') return 'sub';
-  if (['chat', 'gift', 'follow', 'like', 'sub', 'moderation', 'system', 'command', 'custom'].includes(t)) return t;
+  if (['chat', 'gift', 'follow', 'like', 'sub', 'moderation', 'system', 'command', 'custom', 'share', 'raid', 'stream_start', 'stream_end'].includes(t)) return t;
   return fallback;
 }
 
@@ -98,6 +98,7 @@ function normalizeEvent(input = {}, sourceConnector = 'unknown') {
     message: data.message || data.text || data.comment ? { text: safeString(data.message?.text || data.message || data.text || data.comment), emotes: [], reply: null } : null,
     gift,
     moderation,
+    data: {count:data.count ?? data.repeatCount ?? null,value:data.value ?? data.amount ?? null,text:data.text ?? null},
     meta: {
       sourceConnector,
       receivedAt: new Date().toISOString(),

@@ -7,8 +7,8 @@
     const cfg = safe(() => S.config) || {};
     const appearance = cfg.appearance || {};
     const root = document.documentElement;
-    if (appearance.programBackground !== false) root.style.setProperty('--program-background', "url('../assets/program-background.jpg')");
-    else root.style.setProperty('--program-background', "url('../assets/HIntergund.png')");
+    if (appearance.programBackground !== false) root.style.setProperty('--program-background', "url('../assets/marble.jpg')");
+    else root.style.setProperty('--program-background', "url('../assets/marble.jpg')");
     root.style.setProperty('--background-darkness', String(Math.max(0, Math.min(.9, Number(appearance.backgroundDarkness ?? .28)))));
     document.querySelectorAll('.card,.module-card,.panel-section').forEach((el) => {
       el.style.setProperty('opacity', '1');
@@ -105,8 +105,7 @@
     wrap.id = 'settings21';
     wrap.innerHTML =
       section('Settings Service 2.1', `<div class="form-grid"><div><label>Suche in Einstellungen</label><input id="stSearch21" placeholder="z. B. OBS, TTS, Port, CNG, FFmpeg"></div><div><label>Programmhintergrund Abdunklung</label><input id="stBgDark21" type="range" min="0" max="0.8" step="0.02" value="${cfg.appearance?.backgroundDarkness ?? .28}"></div></div><label class="check"><input id="stBg21" type="checkbox" ${cfg.appearance?.programBackground !== false ? 'checked' : ''}> Hochgeladenes CRAZY_BATTO-Programmhintergrundbild verwenden</label><div class="toolbar"><button id="stTest21">Testen</button><button class="primary" id="stApply21">Anwenden</button><button id="stDiscard21">Verwerfen</button><button id="stResetGeneral21">Allgemein auf Standard</button><button id="stResetNetwork21">Netzwerk auf Standard</button></div><div id="stResult21" class="composer-hint">Änderungen werden erst durch Anwenden persistent.</div>`)
-      + section('Automatische Synchronisierung', `<label class="check"><input id="syncEnabled21" type="checkbox" ${sync.enabled !== false ? 'checked' : ''}> Modul-Synchronisierung aktiviert</label><div class="form-grid four">${Object.keys(modules).map((name) => `<label class="check"><input data-sync21="${esc(name)}" type="checkbox" ${modules[name] !== false ? 'checked' : ''}> ${esc(name)}</label>`).join('')}</div><p>Eine angewendete Einstellung wird als gemeinsame Source of Truth an die laufenden Module verteilt.</p>`)
-      + section('Info', `<div style="padding:18px;text-align:center;font-size:16px;font-weight:800;color:#dff6ff;text-shadow:0 0 14px rgba(0,174,255,.35)">Ich danke Dir Für alles Sarah Luna Ich hab Dich Lieb Dein Bruder Crazy_Batto</div>`);
+      + section('Automatische Synchronisierung', `<label class="check"><input id="syncEnabled21" type="checkbox" ${sync.enabled !== false ? 'checked' : ''}> Modul-Synchronisierung aktiviert</label><div class="form-grid four">${Object.keys(modules).map((name) => `<label class="check"><input data-sync21="${esc(name)}" type="checkbox" ${modules[name] !== false ? 'checked' : ''}> ${esc(name)}</label>`).join('')}</div><p>Eine angewendete Einstellung wird als gemeinsame Source of Truth an die laufenden Module verteilt.</p>`);
     el.prepend(wrap);
 
     const search = document.querySelector('#stSearch21');

@@ -18,7 +18,7 @@ const { AlertQueue } = require('../src/core/alerts/alert-queue.cjs');
     for (const fixture of [fixtureV1, fixtureV5]) {
       const migrated = migrateConfig(fixture);
       assert.equal(migrated.version, DEFAULT_CONFIG.version);
-      assert.equal(migrated.schemaVersion, 3);
+      assert.equal(migrated.schemaVersion, DEFAULT_CONFIG.schemaVersion);
       assert.equal(migrated.http.port, 17777);
       assert.equal(migrated.unknownLegacyField, undefined);
     }

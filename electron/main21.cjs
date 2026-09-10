@@ -1,4 +1,6 @@
+// RELEASE_213_COMPLETE
 const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage, clipboard } = require('electron');
+const { BroadcastService } = require('../src/core/broadcast/service.cjs');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -43,10 +45,12 @@ let healthService;
 let auditStore;
 let ffmpeg;
 let adapters = {};
+let broadcastService = null;
 let autoBroadcastTimer = null;
 let autoBroadcastDelayTimer = null;
 let autoBroadcastIndex = 0;
 let quitting = false;
+let obsWasLive = false;
 
 const SECRET_REFS = {
   obs: 'obs-password',
@@ -97,16 +101,17 @@ function createWindow(detached = false) {
     x: Number.isFinite(saved?.x) ? saved.x : undefined,
     y: Number.isFinite(saved?.y) ? saved.y : undefined,
     minWidth: detached ? 520 : 1180,
+    autoHideMenuBar: true,
     minHeight: 700,
     show: false,
     title: detached ? 'Batto OBS Tool 2.1 – Multi-Chat' : 'Batto OBS Tool 2.1',
-    backgroundColor: '#eef7ff',
+    backgroundColor: '#0b0b0c',
     icon: path.join(__dirname, '..', 'src', 'assets', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: true
     }
   });
 
@@ -114,14 +119,8 @@ function createWindow(detached = false) {
     query: { detached: detached ? '1' : '0' }
   });
   win.once('ready-to-show', () => win.show());
-  win.webContents.on('did-finish-load', () => {
-    const enhance = path.join(__dirname, '..', 'src', 'renderer', 'v21-ui.js');
-    if (fs.existsSync(enhance)) {
-      const code = fs.readFileSync(enhance, 'utf8');
-      win.webContents.executeJavaScript(code).catch(() => {});
-    }
-  });
-
+  win.webContents.setWindowOpenHandler(({url})=>{if(/^https?:\/\//i.test(url))shell.openExternal(url).catch(()=>{});return{action:'deny'};});
+  win.webContents.on('will-navigate',(event,url)=>{if(!url.startsWith(pathToFileURL(path.join(__dirname,'..','src','renderer','index.html')).href))event.preventDefault();});
   let timer;
   const saveBounds = () => {
     clearTimeout(timer);
@@ -262,6 +261,8 @@ function handleNormalizedEvent(event) {
   if (event.type === 'chat') {
     const accepted = chatCore.ingest(normalizedToChat(event));
     if (!accepted) return;
+    const source=String(event.meta?.sourceConnector || '');
+    if (!/automation|broadcast|mock|fake|test|local/i.test(source)) broadcastService?.noteChat(event.platform);
     actionEngine.handleMessage(event).catch((error) => bridgeLog('warn', 'Rules', 'COMMAND_FAILED', { message: error.message }));
     const tts = configStore.get().tts || {};
     if (tts.enabled && tts.readChat && (tts.platforms || []).includes(event.platform)) {
@@ -276,35 +277,20 @@ function handleNormalizedEvent(event) {
   actionEngine.handleEvent(event).catch((error) => bridgeLog('warn', 'Rules', 'EVENT_RULE_FAILED', { message: error.message }));
 }
 
-function broadcastMessageNow() {
-  const cfg = configStore.get().autoBroadcast || {};
-  const messages = (cfg.messages || []).map(String).map((x) => x.trim()).filter(Boolean);
-  if (!cfg.enabled || !messages.length) return;
-  const text = (cfg.mode || 'sequence') === 'random'
-    ? messages[Math.floor(Math.random() * messages.length)]
-    : messages[autoBroadcastIndex++ % messages.length];
-  for (const platform of cfg.targets || []) {
-    sendOutbound(platform, text, { source: 'auto-broadcast' }).catch((error) => bridgeLog('warn', 'Auto-Broadcast', 'SEND_FAILED', { platform, message: error.message }));
-  }
+function restartAutoBroadcast() {
+  clearTimeout(autoBroadcastDelayTimer);clearInterval(autoBroadcastTimer);
+  autoBroadcastDelayTimer=null;autoBroadcastTimer=null;
+  broadcastService?.start();
 }
 
-function restartAutoBroadcast() {
-  clearTimeout(autoBroadcastDelayTimer);
-  clearInterval(autoBroadcastTimer);
-  autoBroadcastDelayTimer = null;
-  autoBroadcastTimer = null;
-  autoBroadcastIndex = 0;
-  const cfg = configStore.get().autoBroadcast || {};
-  if (!cfg.enabled) return;
-  const intervalMs = Math.max(30, Number(cfg.intervalSeconds || 600)) * 1000;
-  const delayMs = Math.max(0, Number(cfg.startDelaySeconds || 0)) * 1000;
-  autoBroadcastDelayTimer = setTimeout(() => {
-    if (!configStore.get().autoBroadcast?.enabled) return;
-    broadcastMessageNow();
-    autoBroadcastTimer = setInterval(broadcastMessageNow, intervalMs);
-    autoBroadcastTimer.unref?.();
-  }, delayMs);
-  autoBroadcastDelayTimer.unref?.();
+function registerBroadcastIpc() {
+  const wrap=fn=>async(_event,payload)=>{try{return await fn(payload);}catch(e){return{ok:false,error:e.message};}};
+  ipcMain.handle('broadcast:status',()=>broadcastService.status());
+  ipcMain.handle('broadcast:upsert',wrap(x=>broadcastService.upsert(x)));
+  ipcMain.handle('broadcast:delete',wrap(x=>broadcastService.remove(x)));
+  ipcMain.handle('broadcast:duplicate',wrap(x=>broadcastService.duplicate(x)));
+  ipcMain.handle('broadcast:master',wrap(x=>broadcastService.master(x)));
+  ipcMain.handle('broadcast:testItem',wrap(x=>broadcastService.test(x)));
 }
 
 function powershell(script) {
@@ -341,7 +327,7 @@ async function synthesizeTts(payload = {}) {
   const volume = Math.max(0, Math.min(1, Number(payload.volume ?? cfg.volume ?? 1)));
   const sapiRate = Math.max(-10, Math.min(10, Math.round((rate - 1) * 5)));
   const file = path.join(configStore.ttsDir, `tts-${Date.now()}-${crypto.randomUUID().slice(0, 8)}.wav`);
-  const script = `Add-Type -AssemblyName System.Speech; $s=New-Object System.Speech.Synthesis.SpeechSynthesizer; ${voice ? `try{$s.SelectVoice('${psString(voice)}')}catch{}` : ''} $s.Rate=${sapiRate}; $s.Volume=${Math.round(volume * 100)}; $s.SetOutputToWaveFile('${psString(file)}'); $s.Speak('${psString(text)}'); $s.Dispose();`;
+  const script = `Add-Type -AssemblyName System.Speech; $s=New-Object System.Speech.Synthesis.SpeechSynthesizer; ${voice ? `try{$s.SelectVoice('${psString(voice)}')}catch{}` : ''} $s.Rate=${sapiRate}; $s.Volume=100; $s.SetOutputToWaveFile('${psString(file)}'); $s.Speak('${psString(text)}'); $s.Dispose();`;
   await powershell(script);
   return { ok: true, path: file, url: pathToFileURL(file).href, outputDeviceId: payload.outputDeviceId || cfg.outputDeviceId || 'default' };
 }
@@ -363,6 +349,7 @@ function applyConfig(next, patch = {}) {
   if (patch.mediaEngine) ffmpeg.updateConfig({ ffmpegPath: next.mediaEngine.ffmpegPath });
   if (patch.autoBroadcast) restartAutoBroadcast();
   send('config:changed', next);
+  overlayServer.broadcast({type:'config',sections:Object.keys(patch)});
 }
 
 function diagnosticsSnapshot() {
@@ -390,7 +377,10 @@ function initCore() {
   chatCore = new ChatCore(cfg);
   eventCore = new EventCore({ ...cfg.eventCore, onLog: bridgeLog });
   overlayServer = new OverlayServer({ host: cfg.http.host, port: cfg.http.port, chatCore, configStore });
-  obs = new OBSController({ ...cfg.obs, password: secretsService.get(SECRET_REFS.obs), onStatus: (status) => send('obs:status', status) });
+  obs = new OBSController({ ...cfg.obs, password: secretsService.get(SECRET_REFS.obs), onStatus: status => {
+    send('obs:status',status);
+    if(status.connected && typeof status.outputActive==='boolean' && status.outputActive!==obsWasLive){obsWasLive=status.outputActive;eventCore.ingestEvent({platform:'internal',type:obsWasLive?'stream_start':'stream_end',id:'obs-stream-'+Date.now(),data:{username:currentConfig().general.displayName}},'obs');}
+  } });
   auditStore = new AuditStore({ dataDir: configStore.dataDir, onStatus: (status) => send('database:status', status), onLog: bridgeLog });
   ffmpeg = new FFmpegService({ ffmpegPath: cfg.mediaEngine.ffmpegPath, onStatus: (status) => send('ffmpeg:status', status), onLog: bridgeLog });
   connectorManager = new ConnectorManager({ connectTimeoutMs: 12000, onLog: bridgeLog });
@@ -416,6 +406,7 @@ function initCore() {
 
   actionEngine = new ActionEngine({
     getConfig: currentConfig,
+    isLive:()=>Boolean(obs.getStatus().connected && obs.getStatus().outputActive),
     sendChat: (platform, text) => sendOutbound(platform, text, { source: 'automation' }),
     onTts: (payload) => send('tts:speak', payload),
     onOverlay: (event) => overlayServer.emitEvent({ schemaVersion: 1, eventId: `internal:${Date.now()}:${crypto.randomUUID()}`, platform: 'internal', type: event.type || 'custom', timestamp: new Date().toISOString(), user: { id: 'system', username: 'system', displayName: 'System', avatar: '', badges: [], isModerator: false }, message: event.data?.text ? { text: event.data.text, emotes: [], reply: null } : null, gift: null, moderation: null, data: event.data || {}, meta: { sourceConnector: 'rule-engine', receivedAt: new Date().toISOString() } }),
@@ -425,6 +416,11 @@ function initCore() {
     onLog: bridgeLog
   });
 
+  broadcastService = new BroadcastService({store:configStore,send:sendOutbound,
+    isLive:()=>Boolean(obs.getStatus().connected && obs.getStatus().outputActive),
+    onStatus:status=>send('broadcast:status',status),
+    onConfig:next=>{settingsService.syncIfClean();applyConfig(next,{autoBroadcast:next.autoBroadcast});}
+  });
   chatCore.on('message', (message) => send('chat:message', message));
   chatCore.on('moderation', (entry) => { auditStore?.writeModeration(entry); send('moderation:event', entry); });
   chatCore.on('filter-hit', (entry) => send('filter:hit', entry));
@@ -466,7 +462,9 @@ async function startExternalServices() {
 }
 
 function registerIpc() {
+  registerBroadcastIpc();
   ipcMain.handle('state:get', () => ({
+    appVersion:app.getVersion(),
     config: currentConfig(), messages: chatCore.getMessages(), logs: chatCore.getLogs(), moderation: chatCore.getModerationState(),
     moderationHistory: chatCore.getModerationHistory(), overlay: overlayServer.getStatus(), adapters: connectorManager.statuses(), obs: obs.getStatus(),
     eventCore: eventCore.getMetrics(), ffmpeg: ffmpeg.getStatus(), database: auditStore.getStatus(), health: healthService.getStatus(),
@@ -491,12 +489,18 @@ function registerIpc() {
     if (!reset.ok) throw new Error(reset.error || 'Reset fehlgeschlagen.');
     const applied = settingsService.apply();
     applyConfig(applied.config, { [section]: applied.config[section] });
+    if(section==='http'){const h=applied.config.http;if(h.enabled)await overlayServer.restart(h.host,h.port);else await overlayServer.stop();}
     return applied.config;
   });
   ipcMain.handle('settings:draft', (_event, patch) => settingsService.patch(patch || {}));
-  ipcMain.handle('settings:apply', () => {
+  ipcMain.handle('settings:apply', async () => {
     const result = settingsService.apply();
-    if (result.ok) applyConfig(result.config, result.config);
+    if (result.ok) {
+      applyConfig(result.config,result.config);
+      const h=result.config.http,status=overlayServer.getStatus();
+      if(!h.enabled)await overlayServer.stop();
+      else if(!status.running||status.host!==h.host||status.port!==h.port)await overlayServer.restart(h.host,h.port);
+    }
     return result;
   });
   ipcMain.handle('settings:discard', () => settingsService.discard());
@@ -525,7 +529,7 @@ function registerIpc() {
       const cfg = currentConfig();
       const url = payload.url || cfg.obs.url || 'ws://127.0.0.1:4455';
       const next = configStore.merge({ obs: { ...cfg.obs, url, autoConnect: Boolean(payload.autoConnect) } });
-      settingsService.discard();
+      settingsService.syncIfClean();
       obs.updateConfig({ ...next.obs, password: secretsService.get(SECRET_REFS.obs) });
       send('config:changed', next);
       return await obs.connect();
@@ -560,7 +564,7 @@ function registerIpc() {
 
   ipcMain.handle('tts:listVoices', async () => { try { return { ok: true, voices: await listTtsVoices() }; } catch (error) { return { ok: false, error: error.message, voices: [] }; } });
   ipcMain.handle('tts:synthesize', async (_event, payload) => { try { return await synthesizeTts(payload); } catch (error) { return { ok: false, error: error.message }; } });
-  ipcMain.handle('tts:cleanup', (_event, filePath) => { try { const resolved = path.resolve(String(filePath || '')); if (resolved.startsWith(path.resolve(configStore.ttsDir)) && fs.existsSync(resolved)) fs.unlinkSync(resolved); return { ok: true }; } catch (error) { return { ok: false, error: error.message }; } });
+  ipcMain.handle('tts:cleanup', (_event, filePath) => { try { const resolved = path.resolve(String(filePath || '')); if (resolved.startsWith(path.resolve(configStore.ttsDir)+path.sep) && fs.existsSync(resolved)) fs.unlinkSync(resolved); return { ok: true }; } catch (error) { return { ok: false, error: error.message }; } });
 
   ipcMain.handle('dialog:font', async () => {
     const result = await dialog.showOpenDialog({ title: 'Eigene Schrift auswählen', properties: ['openFile'], filters: [{ name: 'Fonts', extensions: ['ttf','otf','woff','woff2'] }] });
@@ -569,7 +573,7 @@ function registerIpc() {
     fs.copyFileSync(src, dest); const next = configStore.merge({ chatDesign: { customFontPath: dest, fontFamily: 'BattoCustom' } }); settingsService.discard(); send('config:changed', next); return { ok: true, path: dest, config: next };
   });
   ipcMain.handle('dialog:media', async () => {
-    const result = await dialog.showOpenDialog({ title: 'Medien hinzufügen', properties: ['openFile','multiSelections'], filters: [{ name: 'Medien', extensions: ['mp3','wav','ogg','mp4','webm','gif','png','jpg','jpeg','json'] }] });
+    const result = await dialog.showOpenDialog({ title: 'Medien hinzufügen', properties: ['openFile','multiSelections'], filters: [{ name: 'Medien', extensions: ['mp3','wav','ogg','mp4','webm','gif','png','jpg','jpeg','webp','json'] }] });
     if (result.canceled) return { ok: false, canceled: true };
     const cfg = currentConfig(); const items = [...(cfg.media || [])]; const added = [];
     for (const src of result.filePaths) { const ext = path.extname(src); const name = `${Date.now()}-${crypto.randomUUID().slice(0,8)}${ext}`; const dest = path.join(configStore.mediaDir, name); fs.copyFileSync(src, dest); const item = { id: crypto.randomUUID(), name: path.basename(src), path: dest, type: ext.replace('.','').toLowerCase() }; items.push(item); added.push(item); }
@@ -582,12 +586,14 @@ function registerIpc() {
     const next = configStore.merge({ media, mediaPools }); settingsService.discard(); send('config:changed', next); return { ok: true, config: next };
   });
 
-  ipcMain.handle('automation:testAction', async (_event, action) => { try { return await actionEngine.execute([action], { user:'Crazy_User', username:'Crazy_User', platform:'internal', message:'Test' }); } catch (error) { return { ok:false, error:error.message }; } });
-  ipcMain.handle('broadcast:test', async () => {
-    const cfg = currentConfig().autoBroadcast || {}; const messages = (cfg.messages || []).filter(Boolean); if (!messages.length) return { ok:false, error:'Keine Broadcast-Nachricht eingetragen.' };
-    const results = []; for (const platform of cfg.targets || []) { try { results.push({ platform, ...(await sendOutbound(platform, messages[0], { source:'broadcast-test' })) }); } catch (error) { results.push({ platform, ok:false, error:error.message }); } }
-    return { ok: results.some((x) => x.ok), results };
+  ipcMain.handle('automation:testSequence',async(_event,payload={})=>{
+    try{
+      if(!Array.isArray(payload.actions)||!payload.actions.length||payload.actions.length>50)throw new Error('1 bis 50 Aktionen erforderlich.');
+      return await actionEngine.execute(payload.actions,payload.context || {platform:'internal',user:'Crazy_User',username:'Crazy_User',message:'Test'},{failurePolicy:payload.failurePolicy || 'stop-sequence',timeoutMs:Math.min(60000,Math.max(250,Number(payload.timeoutMs)||5000))});
+    }catch(e){return{ok:false,error:e.message};}
   });
+  ipcMain.handle('automation:testAction', async (_event, action) => { try { return await actionEngine.execute([action], { user:'Crazy_User', username:'Crazy_User', platform:'internal', message:'Test' }); } catch (error) { return { ok:false, error:error.message }; } });
+  ipcMain.handle('broadcast:test',async()=>{try{return await broadcastService.test();}catch(e){return{ok:false,error:e.message};}});
 
   ipcMain.handle('overlay:open', async (_event, route = '/overlay/chat') => { const status = overlayServer.getStatus(); if (!status.running) return { ok:false, error:'Overlay-Server läuft nicht.' }; const url = `http://${status.host}:${status.port}${route}`; await shell.openExternal(url); return { ok:true, url }; });
   ipcMain.handle('overlay:testEvent', (_event, type = 'gift') => { eventCore.ingestEvent({ platform:'tiktok', type, id:`test-${Date.now()}`, data:{ uniqueId:'Crazy_User', nickname:'Crazy_User', giftName:'Rose', count:1, value:100, text:'Test Event' } }, 'fake-connector'); return { ok:true }; });
@@ -618,6 +624,8 @@ function registerIpc() {
 }
 
 async function shutdown() {
+  broadcastService?.stop();
+  actionEngine?.cancelAll();
   clearTimeout(autoBroadcastDelayTimer);
   clearInterval(autoBroadcastTimer);
   healthService?.stop();

@@ -114,6 +114,7 @@ class BroadcastScheduler {
         const pending = entry.pending;
         for (const target of [...pending.remaining]) {
           if (!this.valid(entry) || !this.enabled || this.stopped) break;
+          if (this.now() - this.lastGlobal < this.globalGap) break;
           if (this.now() - (this.lastTarget.get(target) ?? -Infinity) < this.platformGap) continue;
           // Reserve rate slots BEFORE awaiting IO. The single tick owner prevents parallel duplicate sends.
           this.lastTarget.set(target, this.now()); this.lastGlobal = this.now();
